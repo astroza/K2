@@ -1,24 +1,24 @@
 /* 2006/12/28 ElectroLinux
  * Felipe Astroza
- * CuricÃ³
+ * Curicó
  * file: ucmp.c
  * UCMP <=> Microcontroller Multipoint Protocol
  */
 
-#include <default.h>
+#include <ucmp.h>
+#include <hal_serial.h>
+#include <hal_timer.h>
+
+#ifndef DATA_SIZE
+#define DATA_SIZE 64
+#endif
 
 /* Mascaras para sys_bits */
-#define STATUS_MASK 0x3
-#define ACKNAK_MASK 0x4
+#define ACKNAK_MASK 0x2
 #define ACK_WAIT_MASK 0x1
 
-/* Para verificar estados */
-#define STATUS (ucmp.sys_bits & STATUS_MASK)
-
-/* El bit ACKNAK tiene una doble vida. Puede indicar si el mensaje de notificacion es ack o nak
- * o puede indicar que llego un ACK esperado.
- */
-#define ACKNAK (ucmp.sys_bits & ACKNAK_MASK)
+#define CLEAR_ACKNAK ucmp.sys_bits &= ~ACKNAK_MASK
+#define READ_ACKNAK (ucmp.sys_bits & ACKNAK_MASK)
 #define ACK_IS_PRESENT ucmp.sys_bits |= ACKNAK_MASK
 #define NAK_IS_PRESENT ucmp.sys_bits &= ~ACKNAK_MASK
 #define ACK_WAIT_IS_PRESENT (ucmp.sys_bits & ACK_WAIT_MASK)
@@ -27,38 +27,54 @@
 #define ACTIVATE_ACK_WAIT ucmp.sys_bits |= ACK_WAIT_MASK
 #define DEACTIVATE_ACK_WAIT ucmp.sys_bits &= ~ACK_WAIT_MASK
 
+static uint16_t needed, received = 0, discard = 0;
+static uint8_t cur_stage = 0;
+static uint32_t rx_start;
+static uint8_t cmp_addr(struct private_address *, struct frame *, uint8_t);
+
 /* Reglas:
  * 1: Cuando se comparan 2 direcciones (big-endian) siempre se debe comenzar por el byte menos
  * significativo.
  */
 
-/* Estructura principal */
-static struct
-{
-	/* Direccion de nodo */
+/* ucmp: Esta estructura anonima contiene datos de control. 
+ */
+static struct {
+	/* Nuestra direccion */
 	struct private_address sys_addr;
+	/* bits 0-0: ack waiting, 1-1: ACK / NAK */
+	uint8_t sys_bits;
 
-	/* bits 0-1: Status, 2-2: ack/nak, 3-7: unused */
-	uint8 sys_bits;
-
-	/* Usado para almacenar frame entrante */
-	struct frame *sys_frame;
-
-	/* Espero un ack de: */
-	struct private_address sys_ackfrom;
-
-	func_t sys_frameto[2];
-#define to_broadcast sys_frameto[1]
-#define to_node	sys_frameto[0]
+	/* Funcion llamada luego de recibir un frame valido */
+	func_t sys_user_routine;
 } ucmp;
+
+/* storage: Espacio para almacenar un frame entrante, y el origen esperada de un ACK
+ */
+struct __attribute__((packed)) {
+	uint8_t st_stx;
+	uint8_t st_hd[2];
+
+	/* potenciales bytes: dst addr, src addr, flags, DATA, crc[8, 16, 32] */
+	uint8_t st_heap[9 + DATA_SIZE + 4 + 1];
+
+	/* ¿Quien me envia un agradecimiento? st_ack_from */
+	struct private_address st_ack_from;
+} storage;
+
+/* GET_NADDR(): Consigue nuestra direccion en una estructura private_address */
+struct private_address *GET_NADDR()
+{
+	return &ucmp.sys_addr;
+}
 
 /* __GET_ADDR(): Fue traido la seccion independiente, ahora el codigo esta orientado a 8 bits
  * Las direcciones son Big-endian 
  */
-void __GET_ADDR(struct private_address *pa, struct frame *frm, uint8 sd)
+void __GET_ADDR(struct private_address *pa, struct frame *frm, uint8_t sd)
 {
-	uint8 off = 0;
-	int8 i = ADDR_LEN - 1, j = DADDR_SIZE(frm);
+	uint8_t off = 0;
+	int8_t i = ADDR_LEN - 1, j = DADDR_SIZE(frm);
 
 	/* Necesito la direccion de origen? */
 	if(sd) {
@@ -70,42 +86,36 @@ void __GET_ADDR(struct private_address *pa, struct frame *frm, uint8 sd)
 	j--; /* to index */
 
 	while(i >= 0)
-		pa->pa_addr[(uint8)i--] = j >= off? frm->ahead[(uint8)j--] : 0;
+		pa->pa_addr[i--] = j >= off? frm->ahead[j--] : 0;
 }
 
 /* SET_ADDR(): Esta funcion ajusta la direccion de destino y origen de un frame.
  */
 void SET_ADDR(struct frame *frm, struct private_address *pa0, struct private_address *pa1)
 {
-	int8 i, j = ADDR_LEN - 1;
-	uint8 off = 0;
+	int8_t i, j = ADDR_LEN - 1;
+	uint8_t off = 0;
 
 	i = pa0->pa_size - 1;
 	while(i >= 0)
-		frm->ahead[(uint8)i--] = pa0->pa_addr[(uint8)j--];
+		frm->ahead[i--] = pa0->pa_addr[j--];
 
 	off = pa0->pa_size;
 
 	j = ADDR_LEN - 1;
 	i = pa1->pa_size + off - 1;
 	while(i >= off)
-		frm->ahead[(uint8)i--] = pa1->pa_addr[(uint8)j--];
+		frm->ahead[i--] = pa1->pa_addr[j--];
 
 	SET_DD(frm, pa0->pa_size);
 	SET_SS(frm, pa1->pa_size);
 }
 
-/* GET_NADDR(): Consigue nuestra direccion en una estructura private_address */
-struct private_address *GET_NADDR()
-{
-	return &ucmp.sys_addr;
-}
-
 /* paddr_size(): Consigue el tamaño de una direccion.
  */
-uint8 paddr_size(addr_t addr)
+uint8_t paddr_size(addr_t addr)
 {
-	uint8 i = 0;
+	uint8_t i = 0;
 
 	while(i < ADDR_LEN && addr[i] == 0)
 		i++;
@@ -113,71 +123,158 @@ uint8 paddr_size(addr_t addr)
 	return ADDR_LEN - i;
 }
 
-/*       /
- * f(x) | si x < 2 => 0
- *      | si x < 4 => 1
- *      | si x > 3 => 2^(x-3)
- *       \
+/* EE_image(): Determina el tamaÃ±o de un detector de errores en un frame
+ *
+ *  f(x) =  2^(x+2)
+ *  Dom(f) = A
+ *  A = {x e |N / 0 < x < 4}
  */
-/* EEE_table(): Determina el tamaÃ±o de un detector de errores en un frame
- */
-uint8 EEE_table(uint8 x)
+uint8_t EE_image(uint8_t x)
 {
-	if(x < 2)
-		return 0;
-	else if(x < 4)
-		return 1;
-
-	return 1 << (x - 3);
+	return x? 1 << (x + 2) : 0;
 }
 
-/* system_initialize(): Iniciadora de sistema.
+/* NNNN_image(): Retorna la cantidad de bytes en datos
+ *  x = 31 no definido aún. 
  */
-void system_initialize(addr_t addr, struct frame *frm, func_t frm_to_node, func_t frm_to_broadcast)
+uint16_t NNNN_image(uint8_t x)
 {
-	ucmp.sys_addr.pa_addr[0] = addr[0];
-	ucmp.sys_addr.pa_addr[1] = addr[1];
-	ucmp.sys_addr.pa_addr[2] = addr[2];
-	ucmp.sys_addr.pa_size = paddr_size(ucmp.sys_addr.pa_addr);
+        if(x < 8)
+                return x;
 
-	/* Segmento de memoria de FRAMEMAXSIZE bytes, utilizado para almacenar el frame entrante. */
-	ucmp.sys_frame = frm;
-
-	/* Funcion llamada luego de recibir un frame */
-	ucmp.to_node = frm_to_node;
-	ucmp.to_broadcast = frm_to_broadcast;
+        return 1 << (x - 4);
 }
 
-/* send_frame(): Envia frame y _SI_ lo necesita, espera un agradecimiento 
+/* rx_callback(): Espera 3 bytes, STX, HDB2 y HDB1, luego verifica la constante STX y el tamaño
+ * del frame, si estos son correctos, entonces se prepara a esperar los bytes indicados por la cabezera
+ * contenidos en la trama. Cuando es completado se lanza got_a_frame().
  */
-uint8 send_frame(struct frame *frm)
-{
-	uint8 retry;
-	frmlen size = calculate_size(frm);
 
-	if(AA(frm) == RACK) {
-		GET_DADDR(&ucmp.sys_ackfrom, frm);
-		ucmp.sys_bits &= ~ACKNAK_MASK;
-		/* En el caso de fallar reintenta RETRY_MAX-1 veces */
-		ACTIVATE_ACK_WAIT;
-		for(retry = 0; retry < RETRY_MAX; retry++) {
-			do_send_frame(frm, size);
-			ack_wait();
-			if(ACKNAK) { /* 0x1 es ACK, 0x0 es NAK */
-				DEACTIVATE_ACK_WAIT;
-				return OK;
-			}
+static void rx_callback(uint8_t byte)
+{
+	uint8_t *buffer = (uint8_t *)&storage;
+	struct frame *frm = (struct frame *)&storage;
+	uint16_t ahead;
+
+	/* Por el momento RX_TIMEOUT será una constante, luego veremos su calculo dinamico */
+	if(cur_stage == 0 || (hal_timer_ticks - rx_start) < RX_TIMEOUT) {
+		if(discard) {
+			discard--;
+			return;
 		}
-		DEACTIVATE_ACK_WAIT;
-		return ERROR;
+	} else {
+		received = 0;
+		discard = 0;
+		cur_stage = 0;
 	}
 
-	do_send_frame(frm, size);
-	/* En este caso no me preocupa si llegÃ³ no  */
+	buffer[received++ % (sizeof(storage) - sizeof(struct private_address))] = byte;
+
+	switch(cur_stage) {
+		case 0:
+			rx_start = hal_timer_ticks;
+			cur_stage++;
+			break;
+		case 1:
+			/* Si frm->stx es incorrecto pq tendria q confiar en su HDB2 HDB1 ? no me queda otra, debo hacer algo, descartar algo */
+			if(received == 3) {
+				if(frm->stx != STX  ||  NNNN_image(NNNN(frm)) > DATA_SIZE) {
+					discard = DADDR_SIZE(frm) + SADDR_SIZE(frm) + PP(frm) + NNNN_image(NNNN(frm)) + EE_image(EE(frm)) + 1;
+					received = 0; /* Volvemos al principio */
+					cur_stage--;
+				} else
+					cur_stage++;
+			}
+			break;
+		case 2:
+			if(received == (3 + DADDR_SIZE(frm))) {
+				ahead = SADDR_SIZE(frm) + PP(frm) + NNNN_image(NNNN(frm)) + EE_image(EE(frm)) + 1;
+
+				if((DADDR_SIZE(frm) == 0) || CMP_DADDR(&ucmp.sys_addr, frm)) {
+					cur_stage++;
+					needed = ahead + DADDR_SIZE(frm) + 3;
+				} else {
+					discard = ahead;
+					cur_stage = 0;
+					received = 0;
+				}
+			}
+			break;
+		case 3:
+			if(received == needed) {
+				if(buffer[received-1] == EOT)
+					got_a_frame();
+				cur_stage = 0;
+				received = 0;
+			}
+			break;
+	}
+}
+
+
+/* ucmp_init(): Iniciadora del subsistema.
+ */
+void ucmp_init(addr_t addr, func_t user_callback)
+{
+	int i;
+
+	for(i=0; i < ADDR_LEN; i++)
+		ucmp.sys_addr.pa_addr[i] = addr[i];
+
+	ucmp.sys_addr.pa_size = paddr_size(ucmp.sys_addr.pa_addr);
+
+	hal_serial_init(SERIAL_SPEED);
+	hal_serial_rx_cb(rx_callback);
+	hal_timer_init();
+
+	/* Funcion llamada luego de recibir un frame */
+	ucmp.sys_user_routine = user_callback;
+}
+
+/* ack_wait(): Espera ACK_TIMEOUT milisegundos por un ACK.
+ */
+static uint8_t ack_wait()
+{
+	uint32_t start;
+	uint8_t ret;
+
+	start = hal_timer_ticks;
+
+	while(!(ret = READ_ACKNAK) && (hal_timer_ticks - start) < ACK_TIMEOUT);
+
+	return !ret;
+}
+
+/* send_frame(): Envia un frame. Si requiere un agradecimiento, lo espera.
+ */
+uint8_t send_frame(struct frame *frm)
+{
+	uint8_t retry, status;
+	uint16_t size = FRM_SIZE(frm);
+
+	if(AA(frm) == RACK) {
+		GET_DADDR(&storage.st_ack_from, frm);
+
+		/* Limpia ACKNAK */
+		CLEAR_ACKNAK;
+
+		ACTIVATE_ACK_WAIT;
+
+		/* En el caso de fallar reintenta RETRY_MAX veces */
+		retry = 0;
+		do {
+			hal_serial_write((uint8_t *)frm, size);
+		} while( (status = ack_wait()) == ERROR && retry++ < RETRY_MAX);
+
+		DEACTIVATE_ACK_WAIT;
+		return status;
+	}
+
+	hal_serial_write((uint8_t *)frm, size);
 	return OK;
 }
 
-/* inverse_addr(): Copia direcciones entre 2 frames pero de forma inversa.
+/* inverse_addresses(): Copia direcciones entre 2 frames pero de forma inversa.
  * Esta rutina es una optimizacion para peticion/respuesta.
  * inversa:
  * frm0 -> destination = frm1 -> source
@@ -189,7 +286,7 @@ uint8 send_frame(struct frame *frm)
  * no se compara con la disminucion de TEXT al reutilizar
  * funciones ya definidas.
  */
-void inverse_addr(struct frame *frm0, struct frame *frm1)
+void inverse_addresses(struct frame *frm0, struct frame *frm1)
 {
 	struct private_address pa0, pa1;
 
@@ -198,37 +295,29 @@ void inverse_addr(struct frame *frm0, struct frame *frm1)
 	SET_ADDR(frm0, &pa1, &pa0);
 }
 
-/* __send_acknak(): Primero revisa si necesita notificar. Luego envia ack/nak segun corresponda.
+/* __send_acknak(): Envia ack/nak según corresponda.
  */
-static void __send_acknak()
+static void send_acknak(uint8_t w)
 {
-	uint8 frm[10];
+	uint8_t foo[10];
+	struct frame *frm = (struct frame *)foo;
 
-	if(AA(ucmp.sys_frame) == RACK) {
-		/* Me aseguro de que la cabezera este limpia */
-		CLR_HEADER((struct frame *)frm);
-		/* Â¿Es un ack o un nak?
-		 * Consulta en bit ACKNAK de sys_bits
-		 */
-		((struct frame *)frm)->hd[B2] |=  ACKNAK? ACK : NAK;
+	/* Me aseguro de que la cabezera este limpia */
+	CLR_HEADER(frm);
+	frm->stx = STX;
 
-		/* Finalmente envia el frame.
-		 * Copio las direcciones desde frame de entrada a frame de salida, inversamente
-		 */
-		inverse_addr((struct frame *)frm, ucmp.sys_frame);
-		frm[0] = STX; /* Equivalente a (struct frame *)frm->stx = STX */
-		do_send_frame((struct frame *)frm, calculate_size((struct frame *)frm));
-	}
+	/* ¿Es un ack o un nak? */
+	frm->hd[B2] |= w? ACK : NAK;
+
+	/* Copio las direcciones del frame de entrada a "frm", pero intercambiadas */
+	inverse_addresses(frm, (struct frame *)&storage);
+
+	hal_serial_write((uint8_t *)frm, FRM_SIZE(frm));
 }
 
-/* Recuerden usar -O */
-static inline void call_edm(struct frame *frm)
+static uint8_t call_edm(struct frame *frm)
 {
 	switch(GET_EDM(frm)) {
-		case RETRY:
-
-		case CHKSM:
-
 		case CRC8:
 
 		case CRC16:
@@ -237,15 +326,14 @@ static inline void call_edm(struct frame *frm)
 
 		default:
 			/* TEST */
-			ACK_IS_PRESENT;
-			break;
+			return 1;
 	}
 }
 
-static uint8 cmp_addr(struct private_address *pa, struct frame *frm, uint8 s)
+static uint8_t cmp_addr(struct private_address *pa, struct frame *frm, uint8_t s)
 {
-	uint8 size = DADDR_SIZE(frm), off = 0;
-	int8 i, j;
+	uint8_t size = DADDR_SIZE(frm), off = 0;
+	int8_t i, j;
 
 	if(s) {
 		off += size;
@@ -259,28 +347,28 @@ static uint8 cmp_addr(struct private_address *pa, struct frame *frm, uint8 s)
 	j = ADDR_LEN - 1;
 
 	while(i >= off)
-		if(pa->pa_addr[(uint8)j--] != frm->ahead[(uint8)i--])
+		if(pa->pa_addr[j--] != frm->ahead[i--])
 			return 0;
 
 	return 1;
 }
 
-
 /* got_a_frame(): Rutina llamada luego de recibir un frame.
- * Es una pieza fundamental en esta implementaciÃ³n.
  */
 void got_a_frame()
 {
-	uint8 ret;
+	struct frame *frm = (struct frame *)&storage;
+	struct private_address src_addr;
+	uint8_t ret, *data_addr = storage.st_heap + DADDR_SIZE(frm) + SADDR_SIZE(frm) + PP(frm);
 
 	/* ¿Es para mi? */
-	if(CMP_DADDR(&ucmp.sys_addr, ucmp.sys_frame)) {
-		ret = AA(ucmp.sys_frame);
+	if(!(DADDR_SIZE(frm) == 0)) {
+		ret = AA(frm);
 		if(ret > 0x1) { /* Relacionado con Metodos de Deteccion de Errores */
 			/* ¿Estamos esperando ack?, 
 			 * ¿Es de quien espero? y ¿Se trata de un agradecimiento? Si, activo el bit ACKNAK 
 			 */
-			if(ACK_WAIT_IS_PRESENT && ret == ACK && CMP_SADDR(&ucmp.sys_ackfrom, ucmp.sys_frame))
+			if(ACK_WAIT_IS_PRESENT && ret == ACK && CMP_SADDR(&storage.st_ack_from, frm))
 					ACK_IS_PRESENT;
 
 			return;
@@ -292,14 +380,20 @@ void got_a_frame()
 		if(ACK_WAIT_IS_PRESENT)
 			return;
 
-		call_edm(ucmp.sys_frame);
-		/* Envia ack/nak o nada segun corresponda */
-		__send_acknak();
-		ucmp.to_node(ucmp.sys_frame);
+		ret = call_edm(frm);
+		if(AA(frm) == RACK)
+			send_acknak(ret);
+		if(ret) {
+			GET_SADDR(&src_addr, frm);
+			ucmp.sys_user_routine(data_addr, &src_addr, NNNN(frm) | 1 << 4);
+		}
+
 	} else 
-	if(TO_BROADCAST(ucmp.sys_frame) && !ACK_WAIT_IS_PRESENT) {
-		call_edm(ucmp.sys_frame); /* Trato de verificar su integridad */
-		ucmp.to_broadcast(ucmp.sys_frame);
+	if(!ACK_WAIT_IS_PRESENT) { 
+		/* No hay notificacion de FRAME recibido, solo chequeo de integridad */
+		if(call_edm(frm)) {
+			GET_SADDR(&src_addr, frm);
+			ucmp.sys_user_routine(data_addr, &src_addr, NNNN(frm));
+		}
 	}
-	/* No me gusta leer correspondencia de otros :> */
 }
