@@ -268,7 +268,7 @@ void ucmp_init(addr_t addr, func_t user_callback)
 	ucmp.sys_user_routine = user_callback;
 }
 
-/* ack_wait(): Espera ACK_TIMEOUT milisegundos por un ACK.
+/* ack_wait(): Espera ACK_TIMEOUT ticks por un ACK.
  */
 static uint8_t ack_wait()
 {
