@@ -194,9 +194,9 @@ static void rx_callback(uint8_t byte)
 
 	switch(cur_stage) {
 		case 0:
-			rx_start = hal_timer_ticks;
 			rx_timeout = TIMER_TICKS_PER_BYTE * 2;
 			cur_stage++;
+			rx_start = hal_timer_ticks;
 			break;
 		case 1:
 			if(received == 3) {
@@ -217,6 +217,7 @@ static void rx_callback(uint8_t byte)
 					needed = 3 + dd;
 					cur_stage++;
 				}
+				rx_start = hal_timer_ticks;
 			}
 			break;
 		case 2:
@@ -231,6 +232,8 @@ static void rx_callback(uint8_t byte)
 					discard = ahead;
 					rx_timeout = TIMER_TICKS_PER_BYTE * discard;
 				}
+
+				rx_start = hal_timer_ticks;
 			}
 			break;
 		case 3:
