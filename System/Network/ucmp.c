@@ -175,7 +175,7 @@ static void rx_callback(uint8_t byte)
 	 */
 
 	if(cur_stage > 0) {
-		if( (hal_timer_ticks - rx_start) >= rx_start ) {
+		if( (hal_timer_ticks - rx_start) >= rx_timeout ) {
 			received = 0;
 			cur_stage = 0;
 			discard = 0;
