@@ -27,9 +27,23 @@
 #define ACTIVATE_ACK_WAIT ucmp.sys_bits |= ACK_WAIT_MASK
 #define DEACTIVATE_ACK_WAIT ucmp.sys_bits &= ~ACK_WAIT_MASK
 
+/* Tiempo estimado para la transferencia de un octeto a SERIAL_SPEED baudios */
+#define TIMER_TICKS_PER_BYTE ((8*100000)/SERIAL_SPEED)
+/* TIMER_TICKS_PER_BYTE: La frecuencia en este caso es SERIAL_SPEED,
+ * SERIAL_SPEED expresa la cantidad de bits por segundo, nosotros necesitamos bytes,
+ * (SERIAL_SPEED/8), esta seria la frecuencia de bytes por segundo. Ahora
+ * por la expresion T=1/F tenemos que el periodo es de 1/(SERIAL_SPEED/8), esto
+ * quiere decir que se va a demorar 1/(SERIAL_SPEED/8) segundos por cada byte.
+ * 1/(SERIAL_SPEED/8) = 8/SERIAL_SPEED, HAL genera un tick cada 0.00001 segundos
+ * osea que 100000 ticks es un segundo, de esta manera 8/SERIAL_SPEED*100000 es la
+ * cantidad de ticks por byte transferido.
+ *
+ *      Recuerden, por cada segundo, 100000 ticks :-) 
+ */
+
 static uint16_t needed, received = 0, discard = 0;
 static uint8_t cur_stage = 0;
-static uint32_t rx_start;
+static uint32_t rx_start, rx_timeout;
 static uint8_t cmp_addr(struct private_address *, struct frame *, uint8_t);
 
 /* Reglas:
@@ -152,20 +166,28 @@ uint16_t NNNN_image(uint8_t x)
 
 static void rx_callback(uint8_t byte)
 {
-	uint8_t *buffer = (uint8_t *)&storage;
+	uint8_t *buffer = (uint8_t *)&storage, dd;
 	struct frame *frm = (struct frame *)&storage;
 	uint16_t ahead;
 
-	/* Por el momento RX_TIMEOUT será una constante, luego veremos su calculo dinamico */
-	if(cur_stage == 0 || (hal_timer_ticks - rx_start) < RX_TIMEOUT) {
-		if(discard) {
-			discard--;
-			return;
+	/* 1. cur_stage siempre es 0 en el inicio de una comunicacion
+	 * 2. Cualquier recepcion o descarte esta asociado a un tiempo maximo para su realizacion
+	 */
+
+	if(cur_stage > 0) {
+		if( (hal_timer_ticks - rx_start) >= rx_start ) {
+			received = 0;
+			cur_stage = 0;
+			discard = 0;
 		}
-	} else {
-		received = 0;
-		discard = 0;
-		cur_stage = 0;
+
+		if(discard > 0) {
+			if(--discard == 0) {
+				received = 0;
+				cur_stage = 0;
+			} else
+				return;
+		}
 	}
 
 	buffer[received++ % (sizeof(storage) - sizeof(struct private_address))] = byte;
@@ -173,30 +195,41 @@ static void rx_callback(uint8_t byte)
 	switch(cur_stage) {
 		case 0:
 			rx_start = hal_timer_ticks;
+			rx_timeout = TIMER_TICKS_PER_BYTE * 2;
 			cur_stage++;
 			break;
 		case 1:
-			/* Si frm->stx es incorrecto pq tendria q confiar en su HDB2 HDB1 ? no me queda otra, debo hacer algo, descartar algo */
 			if(received == 3) {
-				if(frm->stx != STX  ||  NNNN_image(NNNN(frm)) > DATA_SIZE) {
-					discard = DADDR_SIZE(frm) + SADDR_SIZE(frm) + PP(frm) + NNNN_image(NNNN(frm)) + EE_image(EE(frm)) + 1;
-					received = 0; /* Volvemos al principio */
-					cur_stage--;
+				if(frm->stx != STX) {
+					discard = 0xffff; /* Lo que interesa ahora es el rx_timeout */
+					/* No podemos confiar en este frame, así que descartaremos
+					 * por una cantidad de tiempo equivalente a la transferencia de un frame
+					 * con su maximo tamaño.
+					 */
+					rx_timeout = TIMER_TICKS_PER_BYTE * (3 + 9 + DATA_SIZE + 4 + 1);
 				} else
+				if(NNNN_image(NNNN(frm)) > DATA_SIZE) {
+					discard = DADDR_SIZE(frm) + SADDR_SIZE(frm) + PP(frm) + NNNN_image(NNNN(frm)) + EE_image(EE(frm)) + 1;
+					rx_timeout = TIMER_TICKS_PER_BYTE * discard;
+				} else {
+					dd = DADDR_SIZE(frm);
+					rx_timeout = TIMER_TICKS_PER_BYTE * dd;
+					needed = 3 + dd;
 					cur_stage++;
+				}
 			}
 			break;
 		case 2:
-			if(received == (3 + DADDR_SIZE(frm))) {
+			if(received == needed) {
 				ahead = SADDR_SIZE(frm) + PP(frm) + NNNN_image(NNNN(frm)) + EE_image(EE(frm)) + 1;
 
 				if((DADDR_SIZE(frm) == 0) || CMP_DADDR(&ucmp.sys_addr, frm)) {
+					rx_timeout = TIMER_TICKS_PER_BYTE * ahead;
+					needed += ahead;
 					cur_stage++;
-					needed = ahead + DADDR_SIZE(frm) + 3;
 				} else {
 					discard = ahead;
-					cur_stage = 0;
-					received = 0;
+					rx_timeout = TIMER_TICKS_PER_BYTE * discard;
 				}
 			}
 			break;
@@ -204,6 +237,7 @@ static void rx_callback(uint8_t byte)
 			if(received == needed) {
 				if(buffer[received-1] == EOT)
 					got_a_frame();
+
 				cur_stage = 0;
 				received = 0;
 			}
@@ -397,3 +431,4 @@ void got_a_frame()
 		}
 	}
 }
+
