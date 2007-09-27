@@ -6,6 +6,7 @@
  */
 
 #include <ucmp.h>
+#include <kepler.h>
 #include <hal_serial.h>
 #include <hal_timer.h>
 
@@ -14,15 +15,20 @@
 #endif
 
 /* Mascaras para sys_bits */
+#define FRAME_IN_QUEUE_MASK 0x4
 #define ACKNAK_MASK    0x2
 #define ACK_WAIT_MASK  0x1
+
+#define IS_FRAME_IN_QUEUE	(ucmp.sys_bits & FRAME_IN_QUEUE_MASK)
+#define SET_FRAME_IN_QUEUE	ucmp.sys_bits |= FRAME_IN_QUEUE_MASK
+#define CLEAR_FRAME_IN_QUEUE	ucmp.sys_bits &= ~FRAME_IN_QUEUE_MASK
 
 #define CLEAR_ACKNAK 		ucmp.sys_bits &= ~ACKNAK_MASK
 #define READ_ACKNAK 		(ucmp.sys_bits & ACKNAK_MASK)
 #define ACK_IS_PRESENT 		ucmp.sys_bits |= ACKNAK_MASK
 #define NAK_IS_PRESENT 		ucmp.sys_bits &= ~ACKNAK_MASK
-#define ACK_WAIT_IS_PRESENT 	(ucmp.sys_bits & ACK_WAIT_MASK)
 
+#define ACK_WAIT_IS_PRESENT 	(ucmp.sys_bits & ACK_WAIT_MASK)
 /* Activar y desactivar ACK_WAIT */
 #define ACTIVATE_ACK_WAIT 	ucmp.sys_bits |= ACK_WAIT_MASK
 #define DEACTIVATE_ACK_WAIT 	ucmp.sys_bits &= ~ACK_WAIT_MASK
@@ -42,6 +48,7 @@
  *      Recuerden, por cada segundo, 100000 ticks :-) 
  *  >>> Creo que esto es demaciado.... tal vez llegar a 1mS seria mas sensato, tal vez
  *      fui exagerado cuando hablamos la otra vez.(rab)
+ *  >>> Proximo ciclo de desarrollo cambiamos eso (felipe)
  */
 
 static uint16_t needed, received = 0, discard = 0;
@@ -59,7 +66,7 @@ static uint8_t 	cmp_addr(struct private_address *, struct frame *, uint8_t);
 static struct {
 	/* Nuestra direccion */
 	struct private_address sys_addr;
-	/* bits 0-0: ack waiting, 1-1: ACK / NAK */
+	/* bits 0-0: ack waiting, 1-1: ACK / NAK, bits 2-2: frame in queue */
 	uint8_t sys_bits;
 
 	/* Funcion llamada luego de recibir un frame valido */
@@ -164,12 +171,12 @@ uint16_t NNNN_image(uint8_t x) {
         return 1 << (x - 4);
 }
 
-/* rx_callback(): Espera 3 bytes, STX, HDB2 y HDB1, luego verifica la constante STX y el tamaño
+/* ucmp_rx_callback(): Espera 3 bytes, STX, HDB2 y HDB1, luego verifica la constante STX y el tamaño
  * del frame, si estos son correctos, entonces se prepara a esperar los bytes indicados por la cabezera
  * contenidos en la trama. Cuando es completado se lanza got_a_frame().
  */
 
-static void rx_callback(uint8_t byte) {
+static void ucmp_rx_callback(uint8_t byte) {
 
 	uint8_t *buffer = (uint8_t *)&storage, dd;
 	struct frame *frm = (struct frame *)&storage;
@@ -178,6 +185,9 @@ static void rx_callback(uint8_t byte) {
 	/* 1. cur_stage siempre es 0 en el inicio de una comunicacion
 	 * 2. Cualquier recepcion o descarte esta asociado a un tiempo maximo para su realizacion
 	 */
+
+	if(IS_FRAME_IN_QUEUE)
+		return;
 
 	if(cur_stage > 0) {
 		if( (hal_timer_ticks - rx_start) >= rx_timeout ) {
@@ -244,7 +254,7 @@ static void rx_callback(uint8_t byte) {
 		case 3:
 			if(received == needed) {
 				if(buffer[received-1] == EOT)
-					got_a_frame();
+					SET_FRAME_IN_QUEUE;
 
 				cur_stage = 0;
 				received = 0;
@@ -252,7 +262,6 @@ static void rx_callback(uint8_t byte) {
 			break;
 	}
 }
-
 
 /* ucmp_init(): Iniciadora del subsistema.
  */
@@ -266,7 +275,7 @@ void ucmp_init(addr_t addr, func_t user_callback) {
 	ucmp.sys_addr.pa_size = paddr_size(ucmp.sys_addr.pa_addr);
 
 	hal_serial_init(SERIAL_SPEED);
-	hal_serial_rx_cb(rx_callback);
+	hal_serial_rx_cb(ucmp_rx_callback);
 	hal_timer_init();
 
 	/* Funcion llamada luego de recibir un frame */
@@ -395,9 +404,20 @@ static uint8_t cmp_addr(struct private_address *pa, struct frame *frm, uint8_t s
 	return 1;
 }
 
-//----------------------------------------------------------------------------+
-// got_a_frame(): Rutina llamada luego de recibir un frame.                   |
-//----------------------------------------------------------------------------+
+/* Tarea para kepler
+ */
+TASK(ucmp_task0)
+{
+	if(IS_FRAME_IN_QUEUE) {
+		got_a_frame();
+		CLEAR_FRAME_IN_QUEUE;
+	}
+}
+
+/*----------------------------------------------------------------------------+
+ * got_a_frame(): Rutina llamada luego de recibir un frame.                   |
+ *----------------------------------------------------------------------------+
+ */
 void got_a_frame() {
 
 	struct frame *frm = (struct frame *)&storage;
