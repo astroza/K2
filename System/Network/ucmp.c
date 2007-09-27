@@ -34,15 +34,15 @@
 #define DEACTIVATE_ACK_WAIT 	ucmp.sys_bits &= ~ACK_WAIT_MASK
 
 /* Tiempo estimado para la transferencia de un octeto a SERIAL_SPEED baudios */
-#define TIMER_TICKS_PER_BYTE ((8*100000)/SERIAL_SPEED)
+#define TIMER_TICKS_PER_BYTE ((9*100000)/SERIAL_SPEED + 1)
 
 /* TIMER_TICKS_PER_BYTE: La frecuencia en este caso es SERIAL_SPEED,
  * SERIAL_SPEED expresa la cantidad de bits por segundo, nosotros necesitamos bytes,
- * (SERIAL_SPEED/8), esta seria la frecuencia de bytes por segundo. Ahora
- * por la expresion T=1/F tenemos que el periodo es de 1/(SERIAL_SPEED/8), esto
- * quiere decir que se va a demorar 1/(SERIAL_SPEED/8) segundos por cada byte.
- * 1/(SERIAL_SPEED/8) = 8/SERIAL_SPEED, HAL genera un tick cada 0.00001 segundos
- * osea que 100000 ticks es un segundo, de esta manera 8/SERIAL_SPEED*100000 es la
+ * (SERIAL_SPEED/9), esta seria la frecuencia de bytes por segundo. Ahora
+ * por la expresion T=1/F tenemos que el periodo es de 1/(SERIAL_SPEED/9), esto
+ * quiere decir que se va a demorar 1/(SERIAL_SPEED/9) segundos por cada byte.
+ * 1/(SERIAL_SPEED/9) = 9/SERIAL_SPEED, HAL genera un tick cada 0.00001 segundos
+ * osea que 100000 ticks es un segundo, de esta manera 9/SERIAL_SPEED*100000 es la
  * cantidad de ticks por byte transferido.
  *
  *      Recuerden, por cada segundo, 100000 ticks :-) 
@@ -89,15 +89,16 @@ struct __attribute__((packed)) {
 
 
 /* GET_NADDR(): Consigue nuestra direccion en una estructura private_address */
-struct private_address *GET_NADDR() {
+struct private_address *GET_NADDR() 
+{
 	return &ucmp.sys_addr;
 }
 
 /* __GET_ADDR(): Fue traido la seccion independiente, ahora el codigo esta orientado a 8 bits
  * Las direcciones son Big-endian 
  */
-void __GET_ADDR(struct private_address *pa, struct frame *frm, uint8_t sd) {
-
+void __GET_ADDR(struct private_address *pa, struct frame *frm, uint8_t sd) 
+{
 	uint8_t off = 0;
 	int8_t i = ADDR_LEN - 1, j = DADDR_SIZE(frm);
 
@@ -116,8 +117,8 @@ void __GET_ADDR(struct private_address *pa, struct frame *frm, uint8_t sd) {
 
 /* SET_ADDR(): Esta funcion ajusta la direccion de destino y origen de un frame.
  */
-void SET_ADDR(struct frame *frm, struct private_address *pa0, struct private_address *pa1) {
-
+void SET_ADDR(struct frame *frm, struct private_address *pa0, struct private_address *pa1) 
+{
 	int8_t i, j = ADDR_LEN - 1;
 	uint8_t off = 0;
 
@@ -138,8 +139,8 @@ void SET_ADDR(struct frame *frm, struct private_address *pa0, struct private_add
 
 /* paddr_size(): Consigue el tamaño de una direccion.
  */
-uint8_t paddr_size(addr_t addr) {
-
+uint8_t paddr_size(addr_t addr) 
+{
 	uint8_t i = 0;
 
 	while(i < ADDR_LEN && addr[i] == 0)
@@ -154,8 +155,8 @@ uint8_t paddr_size(addr_t addr) {
  *  Dom(f) = A
  *  A = {x e |N / 0 < x < 4}
  */
-uint8_t EE_image(uint8_t x) {
-
+uint8_t EE_image(uint8_t x) 
+{
 	return x? 1 << (x + 2) : 0;
 }
 
@@ -163,21 +164,18 @@ uint8_t EE_image(uint8_t x) {
 /* NNNN_image(): Retorna la cantidad de bytes en datos
  *  x = 31 no definido aún. 
  */
-uint16_t NNNN_image(uint8_t x) {
-
+uint16_t NNNN_image(uint8_t x) 
+{
         if(x < 8)
                 return x;
 
         return 1 << (x - 4);
 }
 
-/* ucmp_rx_callback(): Espera 3 bytes, STX, HDB2 y HDB1, luego verifica la constante STX y el tamaño
- * del frame, si estos son correctos, entonces se prepara a esperar los bytes indicados por la cabezera
- * contenidos en la trama. Cuando es completado se lanza got_a_frame().
+/* ucmp_rx_callback(): 
  */
-
-static void ucmp_rx_callback(uint8_t byte) {
-
+static void ucmp_rx_callback(uint8_t byte) 
+{
 	uint8_t *buffer = (uint8_t *)&storage, dd;
 	struct frame *frm = (struct frame *)&storage;
 	uint16_t ahead;
@@ -265,8 +263,8 @@ static void ucmp_rx_callback(uint8_t byte) {
 
 /* ucmp_init(): Iniciadora del subsistema.
  */
-void ucmp_init(addr_t addr, func_t user_callback) {
-
+void ucmp_init(addr_t addr, func_t user_callback) 
+{
 	int i;
 
 	for(i=0; i < ADDR_LEN; i++)
@@ -284,8 +282,8 @@ void ucmp_init(addr_t addr, func_t user_callback) {
 
 /* ack_wait(): Espera ACK_TIMEOUT ticks por un ACK.
  */
-static uint8_t ack_wait() {
-
+static uint8_t ack_wait() 
+{
 	uint32_t start;
 	uint8_t ret;
 
@@ -298,8 +296,8 @@ static uint8_t ack_wait() {
 
 /* send_frame(): Envia un frame. Si requiere un agradecimiento, lo espera.
  */
-uint8_t send_frame(struct frame *frm) {
-
+uint8_t send_frame(struct frame *frm) 
+{
 	uint8_t retry, status;
 	uint16_t size = FRM_SIZE(frm);
 
@@ -337,8 +335,8 @@ uint8_t send_frame(struct frame *frm) {
  * no se compara con la disminucion de TEXT al reutilizar
  * funciones ya definidas.
  */
-void inverse_addresses(struct frame *frm0, struct frame *frm1) {
-
+void inverse_addresses(struct frame *frm0, struct frame *frm1) 
+{
 	struct private_address pa0, pa1;
 
 	GET_DADDR(&pa0, frm1);
@@ -348,8 +346,8 @@ void inverse_addresses(struct frame *frm0, struct frame *frm1) {
 
 /* __send_acknak(): Envia ack/nak según corresponda.
  */
-static void send_acknak(uint8_t w) {
-
+static void send_acknak(uint8_t w) 
+{
 	uint8_t foo[10];
 	struct frame *frm = (struct frame *)foo;
 
@@ -366,8 +364,8 @@ static void send_acknak(uint8_t w) {
 	hal_serial_write((uint8_t *)frm, FRM_SIZE(frm));
 }
 
-static uint8_t call_edm(struct frame *frm) {
-
+static uint8_t call_edm(struct frame *frm) 
+{
 	switch(GET_EDM(frm)) {
 		case CRC8:
 
@@ -381,15 +379,15 @@ static uint8_t call_edm(struct frame *frm) {
 	}
 }
 
-static uint8_t cmp_addr(struct private_address *pa, struct frame *frm, uint8_t s) {
-
+static uint8_t cmp_addr(struct private_address *pa, struct frame *frm, uint8_t s) 
+{
 	uint8_t size = DADDR_SIZE(frm), off = 0;
 	int8_t i, j;
 
 	if(s) {
 		off += size;
 		size = SADDR_SIZE(frm);
-		}
+	}
 
 	if(size > ADDR_LEN || size != pa->pa_size) /* La direccion no debe sobrepasar lo soportado por la arquitectura */
 		return 0;
@@ -418,8 +416,8 @@ TASK(ucmp_task0)
  * got_a_frame(): Rutina llamada luego de recibir un frame.                   |
  *----------------------------------------------------------------------------+
  */
-void got_a_frame() {
-
+void got_a_frame() 
+{
 	struct frame *frm = (struct frame *)&storage;
 	struct private_address src_addr;
 	uint8_t ret, *data_addr = storage.st_heap + DADDR_SIZE(frm) + SADDR_SIZE(frm) + PP(frm);
@@ -460,5 +458,3 @@ void got_a_frame() {
 		}
 	}
 }
-
-
