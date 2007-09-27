@@ -10,44 +10,44 @@
 #include <hal_type.h>
 
 /* Interface */
-#define OK 	0x0
-#define ERROR	0x1
+#define OK 		0x0
+#define ERROR		0x1
 
 /* Constants */
-#define STX 	0x02 	/* Start of text */
-#define EOT	0x04	/* End of text */
+#define STX 		0x02 	/* Start of text */
+#define EOT		0x04	/* End of text */
 
 /* bitmasks for HDB2 */
-#define DD_MASK	0xc0
-#define SS_MASK	0x30
-#define PP_MASK 0x0c
-#define AA_MASK 0x03
+#define DD_MASK		0xc0	// 1100 0000
+#define SS_MASK		0x30    // 0011 0000
+#define PP_MASK 	0x0c    // 0000 1100
+#define AA_MASK 	0x03    // 0000 0011
 
 /* bitmasks for HDB1 */
-#define C_MASK		0x80
-#define EE_MASK		0x30
-#define NNNN_MASK	0x0f
+#define C_MASK		0x80	// 1000 0000
+#define EE_MASK		0x30	// 0011 0000
+#define NNNN_MASK	0x0f    // 0000 1111
 
 /* Definiciones para trabajar con la estructura frame y su cabezera.
  */
 
-#define DADDR_SIZE(a) (((a)->hd[B2] & DD_MASK) >> 6)
-#define SADDR_SIZE(a) (((a)->hd[B2] & SS_MASK) >> 4)
-#define PP(a) (((a)->hd[B2] & PP_MASK) >> 2)
-#define AA(a) (((a)->hd[B2] & AA_MASK))
-#define SET_DD(a, b) ((a)->hd[B2] |= (((b) & 0x3) << 6))
-#define SET_SS(a, b) ((a)->hd[B2] |= (((b) & 0x3) << 4))
-#define SET_AA(a, b) ((a)->hd[B2] |= ((b) & 0x3))
+#define DADDR_SIZE(a) 	(((a)->hd[B2] & DD_MASK) >> 6)
+#define SADDR_SIZE(a) 	(((a)->hd[B2] & SS_MASK) >> 4)
+#define PP(a) 		(((a)->hd[B2] & PP_MASK) >> 2)
+#define AA(a) 		(((a)->hd[B2] & AA_MASK))
+#define SET_DD(a, b) 	((a)->hd[B2] |= (((b) & 0x3) << 6))
+#define SET_SS(a, b) 	((a)->hd[B2] |= (((b) & 0x3) << 4))
+#define SET_AA(a, b) 	((a)->hd[B2] |= ((b) & 0x3))
 
-#define C(a) ((a)->hd[B1] & C_MASK) >> 7)
-#define EE(a) (((a)->hd[B1] & EE_MASK) >> 4)
-#define NNNN(a) ((a)->hd[B1] & NNNN_MASK)
-#define SET_C(a) ((a)->hd[B1] |= C_MASK)
-#define SET_EE(a, b) ((a)->hd[B1] |= (((b) & 0x3) << 4))
-#define SET_NNNN(a, b) ((a)->hd[B1] |= (b & 0xf))
+#define C(a) 		((a)->hd[B1] & C_MASK) >> 7)
+#define EE(a) 		(((a)->hd[B1] & EE_MASK) >> 4)
+#define NNNN(a) 	((a)->hd[B1] & NNNN_MASK)
+#define SET_C(a) 	((a)->hd[B1] |= C_MASK)
+#define SET_EE(a, b) 	((a)->hd[B1] |= (((b) & 0x3) << 4))
+#define SET_NNNN(a, b) 	((a)->hd[B1] |= (b & 0xf))
 
 #define ADDR_LEN	3
-#define PADDR(a) uint8_t (a)[ADDR_LEN]
+#define PADDR(a) 	uint8_t (a)[ADDR_LEN]
 typedef uint8_t *addr_t;
 
 struct frame {
@@ -63,8 +63,8 @@ struct frame {
 
 /* struct private_address: Estructura utilizada para describir una direccion de red dentro del codigo
  */
-struct private_address
-{
+struct private_address {
+
 	PADDR(pa_addr);
 	uint8_t pa_size;
 };
@@ -83,17 +83,17 @@ struct private_address
 
 #define SET_PASZ(pa, sz) (pa)->pa_size = (sz)
 
-#define B2 0x0
-#define B1 0x1
+#define B2 		0x0
+#define B1 		0x1
 
 #define ACK_TIMEOUT	50000	/* medio segundo en unidades de 10usec */
 #define RX_TIMEOUT 	6753    /* TIMEOUT temporal: Es una estimacion para 81 bytes a 9200 baudios */
 /* Para AA bits */
-#define RACK 0x1 /* Requiere ACK */
-#define ACK 0x2 /* Acknowledged */
-#define NAK 0x3 /* Not Acknowledged */
+#define RACK 		0x1 	/* Requiere ACK */
+#define ACK 		0x2 	/* Acknowledged */
+#define NAK 		0x3 	/* Not Acknowledged */
 
-#define GET_EDM(a) EE((a)) /* Error detection method */
+#define GET_EDM(a) EE((a)) 	/* Error detection method */
 
 #define NOMETHOD	0x0
 #define CRC8		0x3
@@ -129,3 +129,4 @@ void got_a_frame();
 
 
 #endif
+
