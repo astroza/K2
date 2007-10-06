@@ -60,7 +60,7 @@ struct frame {
 } __attribute__ ((packed));
 
 /* Calcula tamaño de un frame leyendo cabezera */
-#define FRM_SIZE(a) (DADDR_SIZE((a)) + SADDR_SIZE((a)) + PP((a)) + NNNNN((a)))  + E((a)) + 4)
+#define FRM_SIZE(a) (DADDR_SIZE((a)) + SADDR_SIZE((a)) + PP((a)) + NNNNN((a)) + E((a)) + 4)
 /* Un no-pecador hack */
 #define CLR_HEADER(a) *(uint16_t *)&((a)->hd[B2]) = 0
 
