@@ -42,7 +42,7 @@
 
 #define C(a) 		((a)->hd[B1] & C_MASK) /* Cuando un campo es de un solo bit, no nos importa su cantidad, puede ser 0 o mayor a 0, por eso no hay shift right */
 #define A(a)		((a)->hd[B1] & A_MASK)
-#define E(a) 		((a)->hd[B1] & EE_MASK)
+#define E(a) 		((a)->hd[B1] & E_MASK)
 #define NNNNN(a) 	((a)->hd[B1] & NNNNN_MASK)
 #define SET_C(a) 	((a)->hd[B1] |= C_MASK)
 #define SET_A(a)	((a)->hd[B1] |= A_MASK)
