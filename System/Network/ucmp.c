@@ -11,7 +11,7 @@
 #include <hal_timer.h>
 
 #ifndef DATA_SIZE
-#define DATA_SIZE 64
+#define DATA_SIZE 31
 #endif
 
 /* Mascaras para sys_bits */
@@ -25,8 +25,7 @@
 
 #define CLEAR_ACKNAK 		ucmp.sys_bits &= ~ACKNAK_MASK
 #define READ_ACKNAK 		(ucmp.sys_bits & ACKNAK_MASK)
-#define ACK_IS_PRESENT 		ucmp.sys_bits |= ACKNAK_MASK
-#define NAK_IS_PRESENT 		ucmp.sys_bits &= ~ACKNAK_MASK
+#define SET_ACK			ucmp.sys_bits |= ACKNAK_MASK
 
 #define ACK_WAIT_IS_PRESENT 	(ucmp.sys_bits & ACK_WAIT_MASK)
 /* Activar y desactivar ACK_WAIT */
@@ -80,8 +79,8 @@ struct __attribute__((packed)) {
 	uint8_t st_stx;
 	uint8_t st_hd[2];
 
-	/* potenciales bytes: dst addr, src addr, flags, DATA, crc[8, 16, 32] */
-	uint8_t st_heap[9 + DATA_SIZE + 4 + 1];
+	/* potenciales bytes: dst addr, src addr, flags, DATA, crc8 */
+	uint8_t st_heap[1 + 2 + 3 + 3 + 3 + DATA_SIZE + 1 + 1];
 
 	/* ¿Quien me envia un agradecimiento? st_ack_from */
 	struct private_address st_ack_from;
@@ -149,29 +148,6 @@ uint8_t paddr_size(addr_t addr)
 	return ADDR_LEN - i;
 }
 
-/* EE_image(): Determina el tamaÃ±o de un detector de errores en un frame
- *
- *  f(x) =  2^(x+2)
- *  Dom(f) = A
- *  A = {x e |N / 0 < x < 4}
- */
-uint8_t EE_image(uint8_t x) 
-{
-	return x? 1 << (x + 2) : 0;
-}
-
-
-/* NNNN_image(): Retorna la cantidad de bytes en datos
- *  x = 31 no definido aún. 
- */
-uint16_t NNNN_image(uint8_t x) 
-{
-        if(x < 8)
-                return x;
-
-        return 1 << (x - 4);
-}
-
 /* ucmp_rx_callback(): 
  */
 static void ucmp_rx_callback(uint8_t byte) 
@@ -221,8 +197,8 @@ static void ucmp_rx_callback(uint8_t byte)
 					 */
 					rx_timeout = TIMER_TICKS_PER_BYTE * (3 + 9 + DATA_SIZE + 4 + 1);
 				} else
-				if(NNNN_image(NNNN(frm)) > DATA_SIZE) {
-					discard = DADDR_SIZE(frm) + SADDR_SIZE(frm) + PP(frm) + NNNN_image(NNNN(frm)) + EE_image(EE(frm)) + 1;
+				if(NNNNN(frm) > DATA_SIZE) {
+					discard = DADDR_SIZE(frm) + SADDR_SIZE(frm) + PP(frm) + NNNNN(frm) + E(frm) + 1;
 					rx_timeout = TIMER_TICKS_PER_BYTE * discard;
 				} else {
 					dd = DADDR_SIZE(frm);
@@ -235,7 +211,7 @@ static void ucmp_rx_callback(uint8_t byte)
 			break;
 		case 2:
 			if(received == needed) {
-				ahead = SADDR_SIZE(frm) + PP(frm) + NNNN_image(NNNN(frm)) + EE_image(EE(frm)) + 1;
+				ahead = SADDR_SIZE(frm) + PP(frm) + NNNNN(frm) + E(frm) + 1;
 
 				if((DADDR_SIZE(frm) == 0) || CMP_DADDR(&ucmp.sys_addr, frm)) {
 					rx_timeout = TIMER_TICKS_PER_BYTE * ahead;
@@ -291,7 +267,7 @@ static uint8_t ack_wait()
 
 	while(!(ret = READ_ACKNAK) && (hal_timer_ticks - start) < ACK_TIMEOUT);
 
-	return !ret;
+	return ret ? OK : ERROR;
 }
 
 /* send_frame(): Envia un frame. Si requiere un agradecimiento, lo espera.
@@ -364,19 +340,10 @@ static void send_acknak(uint8_t w)
 	hal_serial_write((uint8_t *)frm, FRM_SIZE(frm));
 }
 
-static uint8_t call_edm(struct frame *frm) 
+static uint8_t check_integrity(struct frame *frm) 
 {
-	switch(GET_EDM(frm)) {
-		case CRC8:
-
-		case CRC16:
-
-		case CRC32:
-
-		default:
-			/* TEST */
-			return 1;
-	}
+	/* CRC8 code */
+	return OK;
 }
 
 static uint8_t cmp_addr(struct private_address *pa, struct frame *frm, uint8_t s) 
@@ -430,7 +397,7 @@ void got_a_frame()
 			 * ¿Es de quien espero? y ¿Se trata de un agradecimiento? Si, activo el bit ACKNAK 
 			 */
 			if(ACK_WAIT_IS_PRESENT && ret == ACK && CMP_SADDR(&storage.st_ack_from, frm))
-					ACK_IS_PRESENT;
+					SET_ACK;
 
 			return;
 		}
@@ -441,20 +408,21 @@ void got_a_frame()
 		if(ACK_WAIT_IS_PRESENT)
 			return;
 
-		ret = call_edm(frm);
+		ret = check_integrity(frm);
 		if(AA(frm) == RACK)
 			send_acknak(ret);
-		if(ret) {
+
+		if(ret == OK) {
 			GET_SADDR(&src_addr, frm);
-			ucmp.sys_user_routine(data_addr, &src_addr, NNNN(frm) | 1 << 4);
+			ucmp.sys_user_routine(data_addr, &src_addr, NNNNN(frm) | (1 << 5));
 		}
 
 	} else 
 	if(!ACK_WAIT_IS_PRESENT) { 
 		/* No hay notificacion de FRAME recibido, solo chequeo de integridad */
-		if(call_edm(frm)) {
+		if(check_integrity(frm) == OK) {
 			GET_SADDR(&src_addr, frm);
-			ucmp.sys_user_routine(data_addr, &src_addr, NNNN(frm));
+			ucmp.sys_user_routine(data_addr, &src_addr, NNNNN(frm));
 		}
 	}
 }
