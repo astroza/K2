@@ -369,21 +369,11 @@ static uint8_t cmp_addr(struct private_address *pa, struct frame *frm, uint8_t s
 	return 1;
 }
 
-/* Tarea para kepler
- */
-TASK(ucmp_task0)
-{
-	if(IS_FRAME_IN_QUEUE) {
-		got_a_frame();
-		CLEAR_FRAME_IN_QUEUE;
-	}
-}
-
 /*----------------------------------------------------------------------------+
  * got_a_frame(): Rutina llamada luego de recibir un frame.                   |
  *----------------------------------------------------------------------------+
  */
-void got_a_frame() 
+static void got_a_frame() 
 {
 	struct frame *frm = (struct frame *)&storage;
 	struct private_address src_addr;
@@ -426,3 +416,14 @@ void got_a_frame()
 		}
 	}
 }
+
+/* Tarea para kepler
+ */
+TASK(ucmp_task0)
+{
+	if(IS_FRAME_IN_QUEUE) {
+		got_a_frame();
+		CLEAR_FRAME_IN_QUEUE;
+	}
+}
+

@@ -120,11 +120,13 @@ typedef void (*func_t)(uint8_t *, struct private_address *, uint8_t);
  */ 
 #define TO_BROADCAST(a) (DADDR_SIZE((a)) == 0)
 
-void system_initialize(uint8_t *, struct frame *, func_t, func_t);
+void ucmp_init(addr_t, func_t);
 void SET_ADDR(struct frame *, struct private_address *, struct private_address *);
 struct private_address *GET_NADDR();
 uint8_t send_frame(struct frame *);
-void got_a_frame();
+void inverse_addresses(struct frame *, struct frame *);
+
+void __GET_ADDR(struct private_address *, struct frame *, uint8_t);
 
 
 #endif
