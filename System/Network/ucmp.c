@@ -10,10 +10,6 @@
 #include <hal_serial.h>
 #include <hal_timer.h>
 
-#ifndef DATA_SIZE
-#define DATA_SIZE 31
-#endif
-
 /* Mascaras para sys_bits */
 #define FRAME_IN_QUEUE_MASK 0x4
 #define ACKNAK_MASK    0x2
@@ -411,6 +407,23 @@ static void got_a_frame()
 			ucmp.sys_user_routine(data_addr, &src_addr, NNNNN(frm));
 		}
 	}
+}
+
+void ucmp_buffer_digest_data(union ucmp_buffer *buf, uint8_t *data, uint8 size, uint8 attr)
+{
+	struct frame *frm = &buf->as_frame;
+	uint8 offset;
+
+	size = size & 0x1f;
+	offset = DADDR_SIZE(frm) + SADDR_SIZE(frm) + PP(frm);
+
+	memcpy(frm->ahead + offset, data, (uint16_t)size);
+	offset += size;
+	if(attr) {
+		frm->ahead[offset] = crc8(frm);
+		offset++;
+	}
+	frm->ahead[offset] = EOT;
 }
 
 /* Tarea para kepler

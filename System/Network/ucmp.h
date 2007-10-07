@@ -137,6 +137,7 @@ void SET_ADDR(struct frame *, struct private_address *, struct private_address *
 struct private_address *GET_NADDR();
 uint8_t ucmp_send(struct frame *);
 void inverse_addresses(struct frame *, struct frame *);
+void ucmp_buffer_digest_data(union ucmp_buffer *, uint8_t *, uint8, uint8)
 
 void __GET_ADDR(struct private_address *, struct frame *, uint8_t);
 
