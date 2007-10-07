@@ -76,16 +76,12 @@ static struct {
 /* storage: Espacio para almacenar un frame entrante, y el origen esperada de un ACK
  */
 struct __attribute__((packed)) {
-	uint8_t st_stx;
-	uint8_t st_hd[2];
 
-	/* potenciales bytes: dst addr, src addr, flags, DATA, crc8 */
-	uint8_t st_heap[1 + 2 + 3 + 3 + 3 + DATA_SIZE + 1 + 1];
+	union ucmp_buffer input;
 
-	/* ¿Quien me envia un agradecimiento? st_ack_from */
-	struct private_address st_ack_from;
+	/* ¿Quien me envia un agradecimiento? ack_from */
+	struct private_address ack_from;
 } storage;
-
 
 /* GET_NADDR(): Consigue nuestra direccion en una estructura private_address */
 struct private_address *GET_NADDR() 
@@ -152,9 +148,9 @@ uint8_t paddr_size(addr_t addr)
  */
 static void ucmp_rx_callback(uint8_t byte) 
 {
-	uint8_t *buffer = (uint8_t *)&storage, dd;
-	struct frame *frm = (struct frame *)&storage;
+	uint8_t dd;
 	uint16_t ahead;
+	struct frame *frm = &storage.input.as_frame;
 
 	/* 1. cur_stage siempre es 0 en el inicio de una comunicacion
 	 * 2. Cualquier recepcion o descarte esta asociado a un tiempo maximo para su realizacion
@@ -179,7 +175,7 @@ static void ucmp_rx_callback(uint8_t byte)
 		}
 	}
 
-	buffer[received++ % (sizeof(storage) - sizeof(struct private_address))] = byte;
+	storage.input.as_array[received++ % sizeof(storage.input.as_array)] = byte;
 
 	switch(cur_stage) {
 		case 0:
@@ -195,9 +191,9 @@ static void ucmp_rx_callback(uint8_t byte)
 					 * por una cantidad de tiempo equivalente a la transferencia de un frame
 					 * con su maximo tamaño.
 					 */
-					rx_timeout = TIMER_TICKS_PER_BYTE * (3 + 9 + DATA_SIZE + 4 + 1);
+					rx_timeout = TIMER_TICKS_PER_BYTE * sizeof(storage.input.as_array);
 				} else
-				if(NNNNN(frm) > DATA_SIZE) {
+				if(NNNNN(frm) > SUPPORTED_NNNNN) {
 					discard = DADDR_SIZE(frm) + SADDR_SIZE(frm) + PP(frm) + NNNNN(frm) + E(frm) + 1;
 					rx_timeout = TIMER_TICKS_PER_BYTE * discard;
 				} else {
@@ -270,15 +266,15 @@ static uint8_t ack_wait()
 	return ret ? OK : ERROR;
 }
 
-/* send_frame(): Envia un frame. Si requiere un agradecimiento, lo espera.
+/* ucmp_send(): Envia un frame. Si requiere un agradecimiento, lo espera.
  */
-uint8_t send_frame(struct frame *frm) 
+uint8_t ucmp_send(struct frame *frm) 
 {
 	uint8_t retry, status;
 	uint16_t size = FRM_SIZE(frm);
 
 	if(AA(frm) == RACK) {
-		GET_DADDR(&storage.st_ack_from, frm);
+		GET_DADDR(&storage.ack_from, frm);
 
 		/* Limpia ACKNAK */
 		CLEAR_ACKNAK;
@@ -334,10 +330,10 @@ static void send_acknak(uint8_t w)
 	/* ¿Es un ack o un nak? */
 	frm->hd[B2] |= w? ACK : NAK;
 
-	/* Copio las direcciones del frame de entrada a "frm", pero intercambiadas */
-	inverse_addresses(frm, (struct frame *)&storage);
+	/* Copio las direcciones de la frame de entrada a "frm", pero intercambiadas */
+	inverse_addresses(frm, storage.input.as_frame);
 
-	hal_serial_write((uint8_t *)frm, FRM_SIZE(frm));
+	hal_serial_write(foo, FRM_SIZE(frm));
 }
 
 static uint8_t check_integrity(struct frame *frm) 
@@ -375,9 +371,9 @@ static uint8_t cmp_addr(struct private_address *pa, struct frame *frm, uint8_t s
  */
 static void got_a_frame() 
 {
-	struct frame *frm = (struct frame *)&storage;
+	struct frame *frm = storage.input.as_frame;
 	struct private_address src_addr;
-	uint8_t ret, *data_addr = storage.st_heap + DADDR_SIZE(frm) + SADDR_SIZE(frm) + PP(frm);
+	uint8_t ret, *data_addr = storage.input.ahead + DADDR_SIZE(frm) + SADDR_SIZE(frm) + PP(frm);
 
 	/* ¿Es para mi? */
 	if(!(DADDR_SIZE(frm) == 0)) {
@@ -386,7 +382,7 @@ static void got_a_frame()
 			/* ¿Estamos esperando ack?, 
 			 * ¿Es de quien espero? y ¿Se trata de un agradecimiento? Si, activo el bit ACKNAK 
 			 */
-			if(ACK_WAIT_IS_PRESENT && ret == ACK && CMP_SADDR(&storage.st_ack_from, frm))
+			if(ACK_WAIT_IS_PRESENT && ret == ACK && CMP_SADDR(&storage.ack_from, frm))
 					SET_ACK;
 
 			return;

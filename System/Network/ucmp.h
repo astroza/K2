@@ -64,6 +64,18 @@ struct frame {
 /* Un no-pecador hack */
 #define CLR_HEADER(a) *(uint16_t *)&((a)->hd[B2]) = 0
 
+#ifndef SUPPORTED_NNNNN
+#define SUPPORTED_NNNNN 31
+#endif
+
+/* Un buffer para una trama uCmp */
+union ucmp_buffer
+{
+	struct frame as_frame;
+	/* 3: [stx, hd2, hd1], 9: [da, sa, flags], data, 2: [crc8, eot] */
+	uint8 as_array[3 + 9 + SUPPORTED_NNNNN + 2];
+};
+
 /* struct private_address: Estructura utilizada para describir una direccion de red dentro del codigo
  */
 struct private_address {
@@ -123,7 +135,7 @@ typedef void (*func_t)(uint8_t *, struct private_address *, uint8_t);
 void ucmp_init(addr_t, func_t);
 void SET_ADDR(struct frame *, struct private_address *, struct private_address *);
 struct private_address *GET_NADDR();
-uint8_t send_frame(struct frame *);
+uint8_t ucmp_send(struct frame *);
 void inverse_addresses(struct frame *, struct frame *);
 
 void __GET_ADDR(struct private_address *, struct frame *, uint8_t);
