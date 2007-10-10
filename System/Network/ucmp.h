@@ -73,7 +73,7 @@ union ucmp_buffer
 {
 	struct frame as_frame;
 	/* 3: [stx, hd2, hd1], 9: [da, sa, flags], data, 2: [crc8, eot] */
-	uint8 as_array[3 + 9 + SUPPORTED_NNNNN + 2];
+	uint8_t as_array[3 + 9 + SUPPORTED_NNNNN + 2];
 };
 
 /* struct private_address: Estructura utilizada para describir una direccion de red dentro del codigo
@@ -112,6 +112,8 @@ struct private_address {
 #define NOMETHOD	0x0
 #define CRC8		0x1
 
+#define CHECK_INTEGRITY	0x1
+
 /* Numero de veces que reintenta enviar un frame */
 #define RETRY_MAX	3
 
@@ -137,7 +139,7 @@ void SET_ADDR(struct frame *, struct private_address *, struct private_address *
 struct private_address *GET_NADDR();
 uint8_t ucmp_send(struct frame *);
 void inverse_addresses(struct frame *, struct frame *);
-void ucmp_buffer_digest_data(union ucmp_buffer *, uint8_t *, uint8, uint8)
+void ucmp_buffer_digest_data(union ucmp_buffer *, int8_t *, uint8_t, uint8_t);
 
 void __GET_ADDR(struct private_address *, struct frame *, uint8_t);
 

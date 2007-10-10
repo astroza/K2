@@ -10,6 +10,8 @@
 #include <hal_serial.h>
 #include <hal_timer.h>
 
+#include <string.h>
+
 /* Mascaras para sys_bits */
 #define FRAME_IN_QUEUE_MASK 0x4
 #define ACKNAK_MASK    0x2
@@ -29,15 +31,15 @@
 #define DEACTIVATE_ACK_WAIT 	ucmp.sys_bits &= ~ACK_WAIT_MASK
 
 /* Tiempo estimado para la transferencia de un octeto a SERIAL_SPEED baudios */
-#define TIMER_TICKS_PER_BYTE ((9*100000)/SERIAL_SPEED + 1)
+#define TIMER_TICKS_PER_BYTE ((10*100000)/SERIAL_SPEED + 1)
 
 /* TIMER_TICKS_PER_BYTE: La frecuencia en este caso es SERIAL_SPEED,
  * SERIAL_SPEED expresa la cantidad de bits por segundo, nosotros necesitamos bytes,
  * (SERIAL_SPEED/9), esta seria la frecuencia de bytes por segundo. Ahora
- * por la expresion T=1/F tenemos que el periodo es de 1/(SERIAL_SPEED/9), esto
- * quiere decir que se va a demorar 1/(SERIAL_SPEED/9) segundos por cada byte.
- * 1/(SERIAL_SPEED/9) = 9/SERIAL_SPEED, HAL genera un tick cada 0.00001 segundos
- * osea que 100000 ticks es un segundo, de esta manera 9/SERIAL_SPEED*100000 es la
+ * por la expresion T=1/F tenemos que el periodo es de 1/(SERIAL_SPEED/10), esto
+ * quiere decir que se va a demorar 1/(SERIAL_SPEED/10) segundos por cada byte.
+ * 1/(SERIAL_SPEED/10) = 10/SERIAL_SPEED, HAL genera un tick cada 0.00001 segundos
+ * osea que 100000 ticks es un segundo, de esta manera 10/SERIAL_SPEED*100000 es la
  * cantidad de ticks por byte transferido.
  *
  *      Recuerden, por cada segundo, 100000 ticks :-) 
@@ -219,7 +221,7 @@ static void ucmp_rx_callback(uint8_t byte)
 			break;
 		case 3:
 			if(received == needed) {
-				if(buffer[received-1] == EOT)
+				if(storage.input.as_array[received-1] == EOT)
 					SET_FRAME_IN_QUEUE;
 
 				cur_stage = 0;
@@ -327,9 +329,15 @@ static void send_acknak(uint8_t w)
 	frm->hd[B2] |= w? ACK : NAK;
 
 	/* Copio las direcciones de la frame de entrada a "frm", pero intercambiadas */
-	inverse_addresses(frm, storage.input.as_frame);
+	inverse_addresses(frm, &storage.input.as_frame);
 
 	hal_serial_write(foo, FRM_SIZE(frm));
+}
+
+/* Por implementar */
+uint8_t crc8(struct frame *frm)
+{
+	return 0;
 }
 
 static uint8_t check_integrity(struct frame *frm) 
@@ -367,9 +375,9 @@ static uint8_t cmp_addr(struct private_address *pa, struct frame *frm, uint8_t s
  */
 static void got_a_frame() 
 {
-	struct frame *frm = storage.input.as_frame;
+	struct frame *frm = &storage.input.as_frame;
 	struct private_address src_addr;
-	uint8_t ret, *data_addr = storage.input.ahead + DADDR_SIZE(frm) + SADDR_SIZE(frm) + PP(frm);
+	uint8_t ret, *data_addr = storage.input.as_frame.ahead + DADDR_SIZE(frm) + SADDR_SIZE(frm) + PP(frm);
 
 	/* ¿Es para mi? */
 	if(!(DADDR_SIZE(frm) == 0)) {
@@ -409,20 +417,23 @@ static void got_a_frame()
 	}
 }
 
-void ucmp_buffer_digest_data(union ucmp_buffer *buf, uint8_t *data, uint8 size, uint8 attr)
+void ucmp_buffer_digest_data(union ucmp_buffer *buf, int8_t *data, uint8_t size, uint8_t attr)
 {
 	struct frame *frm = &buf->as_frame;
-	uint8 offset;
+	uint8_t offset;
 
-	size = size & 0x1f;
+	size = size & 0x1f; /* 5 bits para el tamanno */
 	offset = DADDR_SIZE(frm) + SADDR_SIZE(frm) + PP(frm);
 
 	memcpy(frm->ahead + offset, data, (uint16_t)size);
 	offset += size;
-	if(attr) {
+	if(attr) { /* CHECK_INTEGRITY */
 		frm->ahead[offset] = crc8(frm);
+		SET_E(frm);
 		offset++;
 	}
+
+	SET_NNNNN(frm, size);
 	frm->ahead[offset] = EOT;
 }
 
