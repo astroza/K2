@@ -38,7 +38,7 @@
 
 /* TIMER_TICKS_PER_BYTE: La frecuencia en este caso es SERIAL_SPEED,
  * SERIAL_SPEED expresa la cantidad de bits por segundo, nosotros necesitamos bytes,
- * (SERIAL_SPEED/9), esta seria la frecuencia de bytes por segundo. Ahora
+ * (SERIAL_SPEED/10), esta seria la frecuencia de bytes por segundo. Ahora
  * por la expresion T=1/F tenemos que el periodo es de 1/(SERIAL_SPEED/10), esto
  * quiere decir que se va a demorar 1/(SERIAL_SPEED/10) segundos por cada byte.
  * 1/(SERIAL_SPEED/10) = 10/SERIAL_SPEED, HAL genera un tick cada 0.00001 segundos
@@ -268,8 +268,11 @@ static uint8_t ack_wait()
 	start = hal_timer_ticks;
 
 	do {
-		if(IS_FRAME_IN_QUEUE)
+		if(IS_FRAME_IN_QUEUE) {
 			got_a_frame();
+			CLEAR_FRAME_IN_QUEUE;
+		}
+
 	} while(!(ret = READ_ACKNAK) && (hal_timer_ticks - start) < ACK_TIMEOUT);
 
 	return ret ? OK : ERROR;
