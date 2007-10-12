@@ -30,7 +30,10 @@
 #define ACTIVATE_ACK_WAIT 	ucmp.sys_bits |= ACK_WAIT_MASK
 #define DEACTIVATE_ACK_WAIT 	ucmp.sys_bits &= ~ACK_WAIT_MASK
 
-/* Tiempo estimado para la transferencia de un octeto a SERIAL_SPEED baudios */
+
+/* Tiempo estimado para la transferencia de un octeto a SERIAL_SPEED baudios
+ * Observacion: La cantidad de bits por byte transferido son 10. START BIT + 8 bits + STOP BIT 
+ */
 #define TIMER_TICKS_PER_BYTE ((10*100000)/SERIAL_SPEED + 1)
 
 /* TIMER_TICKS_PER_BYTE: La frecuencia en este caso es SERIAL_SPEED,
@@ -52,6 +55,7 @@ static uint16_t needed, received = 0, discard = 0;
 static uint8_t 	cur_stage = 0;
 static uint32_t rx_start, rx_timeout;
 static uint8_t 	cmp_addr(struct private_address *, struct frame *, uint8_t);
+static void got_a_frame();
 
 /* Reglas:
  * 1: Cuando se comparan 2 direcciones (big-endian) siempre se debe comenzar por el byte menos
@@ -77,7 +81,7 @@ struct __attribute__((packed)) {
 
 	union ucmp_buffer input;
 
-	/* ¿Quien me envia un agradecimiento? ack_from */
+	/* Â¿Quien me envia un agradecimiento? ack_from */
 	struct private_address ack_from;
 } storage;
 
@@ -190,10 +194,14 @@ static void ucmp_rx_callback(uint8_t byte)
 					 * con su maximo tamaño.
 					 */
 					rx_timeout = TIMER_TICKS_PER_BYTE * sizeof(storage.input.as_array);
+
+#if SUPPORTED_NNNNN < 31 /* No es necesario este codigo si SUPPORTED_NNNNN es 31, porque es el maximo formado por 5 bits */
 				} else
 				if(NNNNN(frm) > SUPPORTED_NNNNN) {
 					discard = DADDR_SIZE(frm) + SADDR_SIZE(frm) + PP(frm) + NNNNN(frm) + E(frm) + 1;
 					rx_timeout = TIMER_TICKS_PER_BYTE * discard;
+#endif
+
 				} else {
 					dd = DADDR_SIZE(frm);
 					rx_timeout = TIMER_TICKS_PER_BYTE * dd;
@@ -262,7 +270,7 @@ static uint8_t ack_wait()
 	do {
 		if(IS_FRAME_IN_QUEUE)
 			got_a_frame();
-	} while(!(ret = READ_ACKNAK) && (hal_timer_ticks - start) < ACK_TIMEOUT)
+	} while(!(ret = READ_ACKNAK) && (hal_timer_ticks - start) < ACK_TIMEOUT);
 
 	return ret ? OK : ERROR;
 }
@@ -328,8 +336,8 @@ static void send_acknak(uint8_t w)
 	CLR_HEADER(frm);
 	frm->stx = STX;
 
-	/* ¿Es un ack o un nak? */
-	frm->hd[B2] |= w? ACK : NAK;
+	/* Â¿Es un ack o un nak? */
+	frm->hd[B2] |= w == OK? ACK : NAK;
 
 	/* Copio las direcciones de la frame de entrada a "frm", pero intercambiadas */
 	inverse_addresses(frm, &storage.input.as_frame);
@@ -382,12 +390,12 @@ static void got_a_frame()
 	struct private_address src_addr;
 	uint8_t ret, *data_addr = storage.input.as_frame.ahead + DADDR_SIZE(frm) + SADDR_SIZE(frm) + PP(frm);
 
-	/* ¿Es para mi? */
+	/* Â¿Es para mi? */
 	if(!(DADDR_SIZE(frm) == 0)) {
 		ret = AA(frm);
 		if(ret > 0x1) { /* Relacionado con Metodos de Deteccion de Errores */
-			/* ¿Estamos esperando ack?, 
-			 * ¿Es de quien espero? y ¿Se trata de un agradecimiento? Si, activo el bit ACKNAK 
+			/* Â¿Estamos esperando ack?, 
+			 * Â¿Es de quien espero? y ?Se trata de un agradecimiento? Si, activo el bit ACKNAK 
 			 */
 			if(ACK_WAIT_IS_PRESENT && ret == ACK && CMP_SADDR(&storage.ack_from, frm))
 					SET_ACK;
@@ -395,7 +403,7 @@ static void got_a_frame()
 			return;
 		}
 
-		/* ¿Estamos esperando ack? Si -> return
+		/* Â¿Estamos esperando ack? Si -> return
 		 * Es imperativo recibir un "ack" antes del timeout 
 		 */
 		if(ACK_WAIT_IS_PRESENT)
