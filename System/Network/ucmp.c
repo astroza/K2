@@ -259,7 +259,10 @@ static uint8_t ack_wait()
 
 	start = hal_timer_ticks;
 
-	while(!(ret = READ_ACKNAK) && (hal_timer_ticks - start) < ACK_TIMEOUT);
+	do {
+		if(IS_FRAME_IN_QUEUE)
+			got_a_frame();
+	} while(!(ret = READ_ACKNAK) && (hal_timer_ticks - start) < ACK_TIMEOUT)
 
 	return ret ? OK : ERROR;
 }
