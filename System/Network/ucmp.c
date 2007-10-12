@@ -68,7 +68,7 @@ static struct {
 	/* Nuestra direccion */
 	struct private_address sys_addr;
 	/* bits 0-0: ack waiting, 1-1: ACK / NAK, bits 2-2: frame in queue */
-	uint8_t sys_bits;
+	volatile uint8_t sys_bits;
 
 	/* Funcion llamada luego de recibir un frame valido */
 	func_t sys_user_routine;
@@ -393,7 +393,7 @@ static void got_a_frame()
 	/* ¿Es para mi? */
 	if(!(DADDR_SIZE(frm) == 0)) {
 		ret = AA(frm);
-		if(ret > 0x1) { /* Relacionado con Metodos de Deteccion de Errores */
+		if(ret > 1) { /* Relacionado con Metodos de Deteccion de Errores */
 			/* ¿Estamos esperando ack?, 
 			 * ¿Es de quien espero? y ?Se trata de un agradecimiento? Si, activo el bit ACKNAK 
 			 */
