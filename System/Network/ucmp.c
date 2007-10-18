@@ -50,9 +50,8 @@ static struct {
 	uint8_t ack_waiting:1
 	/* status 0: Esta en pleno envio de una trama (con RACK), status 1: Listo para enviar una trama */
 	uint8_t status:1;
-	volatile uint8_t acknak:1;
 	volatile uint8_t frame_in_queue:1;
-	uint8_t reserved:4;
+	uint8_t reserved:5;
 
 	/* Funcion llamada luego de recibir un frame valido */
 	func_t user_routine;
