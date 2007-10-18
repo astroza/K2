@@ -144,9 +144,9 @@ void ucmp_init(uint8_t *, func_t);
 void SET_ADDR(struct frame *, struct private_address *, struct private_address *);
 struct private_address *GET_LOCAL_ADDRESS();
 uint8_t ucmp_send();
-union ucmp_buffer *ucmp_get_buffer();
+struct frame *ucmp_buffer_get();
 void inverse_addresses(struct frame *, struct frame *);
-void ucmp_buffer_digest_data(union ucmp_buffer *, uint8_t *, uint8_t, uint8_t);
+void ucmp_buffer_digest_data(uint8_t *, uint8_t, uint8_t);
 
 void __GET_ADDR(struct private_address *, struct frame *, uint8_t);
 

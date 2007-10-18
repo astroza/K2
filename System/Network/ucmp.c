@@ -242,7 +242,7 @@ void ucmp_init(uint8_t *addr, func_t user_callback)
 }
 
 /* ucmp_send(): Envia la trama en el buffer y activa la espera de ACK si lo requiere.
- * Nota: No se verifica si se esta esperando un agradecimiento, con ucmp_get_buffer() es suficiente.
+ * Nota: No se verifica si se esta esperando un agradecimiento, con ucmp_buffer_get() es suficiente.
  */
 uint8_t ucmp_send() 
 {
@@ -268,12 +268,12 @@ uint8_t ucmp_send()
 
 /* ucmp_get_buffer(): Si uCmp esta listo para enviar una trama, retorna la direccion del buffer para salida
  */
-union ucmp_buffer *ucmp_get_buffer()
+struct frame *ucmp_buffer_get()
 {
 	if(ucmp.status == IN_PROGRES)
 		return NULL;
 
-	return &storage.output;
+	return &storage.output.as_frame;
 }
 
 /* inverse_addresses(): Copia direcciones entre 2 frames pero de forma inversa.
@@ -386,9 +386,9 @@ static void frame_to_user()
 	}
 }
 
-void ucmp_buffer_digest_data(union ucmp_buffer *buf, uint8_t *data, uint8_t size, uint8_t attr)
+void ucmp_buffer_digest_data(uint8_t *data, uint8_t size, uint8_t attr)
 {
-	struct frame *frm = &buf->as_frame;
+	struct frame *frm = &storage.output.as_frame;
 	uint8_t offset;
 
 	size = size & 0x1f; /* 5 bits para el tamanno */
