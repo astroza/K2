@@ -13,6 +13,9 @@
 #define OK 		0x0
 #define ERROR		0x1
 
+#define READY		0x1
+#define IN_PROGRES	0x0
+
 /* Constants */
 #define STX 		0x02 	/* Start of text */
 #define EOT		0x04	/* End of text */
@@ -64,7 +67,7 @@ struct __frame {
 	uint16_t hd;
 } __attribute__ ((packed));
 
-/* Calcula tamanno de un frame */
+/* Calcula tamaÒo de un frame */
 #define FRM_SIZE(a) (DADDR_SIZE((a)) + SADDR_SIZE((a)) + PP((a)) + NNNNN((a)) + E((a)) + 4)
 
 #define CLR_HEADER(a) ((struct __frame *)(a))->hd = 0
@@ -100,11 +103,16 @@ struct ucmp_message {
 
 	/* 0 para broadcast, 1 para nodo */
 	uint8_t dst:1;
+#define TO_BROADCAST 0
+#define TO_NODE 1
+
 	uint8_t reserved:2;
 
 	/* Direccion de origen */
 	struct private_address src;
 };
+
+typedef void (*func_t)(struct ucmp_message *);
 
 #define SET_PA(pa, a, b, c) (pa)->pa_addr[0] = (a); (pa)->pa_addr[1] = (b); (pa)->pa_addr[2] = (c)
 #define SET_PASZ(pa, sz) (pa)->pa_size = (sz)
@@ -114,16 +122,12 @@ struct ucmp_message {
 #define RACK 		0x1 	/* Requiere ACK */
 #define ACK 		0x2 	/* Acknowledged */
 #define NAK 		0x3 	/* Not Acknowledged */
-
 #define NOMETHOD	0x0
 #define CRC8		0x1
-
 #define CHECK_INTEGRITY	0x1
 
 /* Numero de veces que reintenta enviar un frame */
 #define RETRY_MAX	3
-
-typedef void (*func_t)(struct ucmp_message *);
 
 #define GET_SADDR(a, b) __GET_ADDR((a), (b), 1)
 #define GET_DADDR(a, b) __GET_ADDR((a), (b), 0)
@@ -136,18 +140,14 @@ typedef void (*func_t)(struct ucmp_message *);
 */
 #define CMP_SADDR(a, b) (cmp_addr((a), (b), 1))
 
-/* Si el tama√±o de Destination Address es 0, se trata de una direccion 0x0, que equivale a BROADCAST
- */ 
-#define TO_BROADCAST(a) (DADDR_SIZE((a)) == 0)
-
 void ucmp_init(uint8_t *, func_t);
 void SET_ADDR(struct frame *, struct private_address *, struct private_address *);
 struct private_address *GET_LOCAL_ADDRESS();
 uint8_t ucmp_send(struct frame *);
+union ucmp_buffer *ucmp_get_buffer();
 void inverse_addresses(struct frame *, struct frame *);
 void ucmp_buffer_digest_data(union ucmp_buffer *, uint8_t *, uint8_t, uint8_t);
 
 void __GET_ADDR(struct private_address *, struct frame *, uint8_t);
-
 
 #endif

@@ -1,6 +1,6 @@
 /* 2006/12/28 ElectroLinux
  * Felipe Astroza
- * CuricÃ³
+ * Curicó
  * file: ucmp.c
  * UCMP <=> Microcontroller Multipoint Protocol
  */
@@ -31,8 +31,8 @@
  *  >>> Proximo ciclo de desarrollo cambiamos eso (felipe)
  */
 
-static uint32_t rx_start, rx_timeout;
-static uint8_t 	cur_stage = 0, discard = 0, received = 0, needed;
+static uint32_t rx_start, rx_timeout, tx_time;
+static uint8_t 	cur_stage = 0, discard = 0, received = 0, needed, rx_retry;
 static uint8_t 	cmp_addr(struct private_address *, struct frame *, uint8_t);
 static void got_a_frame();
 
@@ -47,10 +47,12 @@ static struct {
 	/* Nuestra direccion */
 	struct private_address local_addr;
 
-	uint8_t ack_waiting:1;
+	uint8_t ack_waiting:1
+	/* status 0: Esta en pleno envio de una trama (con RACK), status 1: Listo para enviar una trama */
+	uint8_t status:1;
 	volatile uint8_t acknak:1;
 	volatile uint8_t frame_in_queue:1;
-	uint8_t reserved:5;
+	uint8_t reserved:4;
 
 	/* Funcion llamada luego de recibir un frame valido */
 	func_t user_routine;
@@ -62,8 +64,9 @@ static struct {
 struct __attribute__((packed)) {
 
 	union ucmp_buffer input;
+	union ucmp_buffer output;
 
-	/* Â¿Quien me envia un agradecimiento? ack_from */
+	/* ¿Quien me envia un agradecimiento? ack_from */
 	struct private_address ack_from;
 } storage;
 
@@ -239,53 +242,38 @@ void ucmp_init(uint8_t *addr, func_t user_callback)
 	ucmp.user_routine = user_callback;
 }
 
-/* ack_wait(): Espera ACK_TIMEOUT ticks por un ACK.
+/* ucmp_send(): Envia la trama en el buffer y activa la espera de ACK si lo requiere.
+ * Nota: No se verifica si se esta esperando un agradecimiento, con ucmp_get_buffer() es suficiente.
  */
-static uint8_t ack_wait() 
+uint8_t ucmp_send() 
 {
-	uint32_t start;
-	uint8_t ret;
-
-	start = hal_timer_ticks;
-
-	do {
-		if(ucmp.frame_in_queue) {
-			got_a_frame();
-			ucmp.frame_in_queue = 0;
-		}
-
-	} while(!(ret = ucmp.acknak) && (hal_timer_ticks - start) < ACK_TIMEOUT);
-
-	return ret ? OK : ERROR;
-}
-
-/* ucmp_send(): Envia un frame. Si requiere un agradecimiento, lo espera.
- */
-uint8_t ucmp_send(struct frame *frm) 
-{
-	uint8_t retry, status;
-	uint16_t size = FRM_SIZE(frm);
+	hal_serial_write(storage.output.as_bytes, FRM_SIZE(&storage.output.as_frame));
 
 	if(AA(frm) == RACK) {
 		GET_DADDR(&storage.ack_from, frm);
-
 		/* Limpia ACKNAK */
 		ucmp.acknak = 0;
-
+		/* Activa la espera de agradecimiento desde storage.ack_from */
 		ucmp.ack_waiting = 1;
 
-		/* En el caso de fallar reintenta RETRY_MAX veces */
-		retry = 0;
-		do {
-			hal_serial_write((uint8_t *)frm, size);
-		} while( (status = ack_wait()) == ERROR && retry++ < RETRY_MAX);
+		/* Bloqueamos el uso de uCmp hasta que este proceso se complete */
+		ucmp.status = IN_PROGRES;
+		rx_retry = RETRY_MAX;
+		tx_time = hal_timer_ticks; /* Captura de hal_timer_ticks al momento del envio */
+	} else
+		ucmp.status = READY;
 
-		ucmp.ack_waiting = 0;
-		return status;
-	}
+	return ucmp.status;
+}
 
-	hal_serial_write((uint8_t *)frm, size);
-	return OK;
+/* ucmp_get_buffer(): Si uCmp esta listo para enviar una trama, retorna la direccion del buffer para salida
+ */
+union ucmp_buffer *ucmp_get_buffer()
+{
+	if(ucmp.status == IN_PROGRES)
+		return NULL;
+
+	return &storage.output;
 }
 
 /* inverse_addresses(): Copia direcciones entre 2 frames pero de forma inversa.
@@ -309,24 +297,23 @@ void inverse_addresses(struct frame *frm0, struct frame *frm1)
 	SET_ADDR(frm0, &pa1, &pa0);
 }
 
-/* __send_acknak(): Envia ack/nak segÃºn corresponda.
+/* __send_acknak(): Envia ack/nak según corresponda.
  */
 static void send_acknak(uint8_t w) 
 {
-	uint8_t foo[10];
-	struct frame *frm = (struct frame *)foo;
+	struct frame *frm = &storage.output.as_frame;
 
 	/* Me aseguro de que la cabezera este limpia */
 	CLR_HEADER(frm);
 	frm->stx = STX;
 
-	/* Â¿Es un ack o un nak? */
+	/* ¿Es un ack o un nak? */
 	SET_AA(frm, (w == OK? ACK : NAK));
 
 	/* Copio las direcciones de la frame de entrada a "frm", pero intercambiadas */
 	inverse_addresses(frm, &storage.input.as_frame);
 
-	hal_serial_write(foo, FRM_SIZE(frm));
+	hal_serial_write(storage.output.as_bytes, FRM_SIZE(frm));
 }
 
 /* Por implementar */
@@ -364,11 +351,9 @@ static uint8_t cmp_addr(struct private_address *pa, struct frame *frm, uint8_t s
 	return 1;
 }
 
-/*----------------------------------------------------------------------------+
- * got_a_frame(): Rutina llamada luego de recibir un frame.                   |
- *----------------------------------------------------------------------------+
+/* frame_to_user(): Queda verificar la integridad, si es necesario, de la trama para llamar la rutina de usuario.
  */
-static void got_a_frame() 
+static void frame_to_user() 
 {
 	struct frame *frm = &storage.input.as_frame;
 	struct ucmp_message msg;
@@ -376,24 +361,8 @@ static void got_a_frame()
 
 	msg.content = storage.input.as_frame.ahead + DADDR_SIZE(frm) + SADDR_SIZE(frm) + PP(frm);
 
-	/* Â¿Es para mi? */
-	if(!(DADDR_SIZE(frm) == 0)) {
-		ret = AA(frm);
-		if(ret > 1) { /* Relacionado con Metodos de Deteccion de Errores */
-			/* Â¿Estamos esperando ack?, 
-			 * Â¿Es de quien espero? y ?Se trata de un agradecimiento? Si, activo el bit ACKNAK 
-			 */
-			if(ucmp.ack_waiting && ret == ACK && CMP_SADDR(&storage.ack_from, frm))
-					ucmp.acknak = 1;
-
-			return;
-		}
-
-		/* Â¿Estamos esperando ack? Si -> return
-		 * Es imperativo recibir un "ack" antes del timeout 
-		 */
-		if(ucmp.ack_waiting)
-			return;
+	/* ¿Es para mi? */
+	if(DADDR_SIZE(frm) != 0) {
 
 		ret = check_integrity(frm);
 		if(AA(frm) == RACK)
@@ -402,17 +371,16 @@ static void got_a_frame()
 		if(ret == OK) {
 			GET_SADDR(&msg.src, frm);
 			msg.size = NNNNN(frm);
-			msg.dst = 1;
+			msg.dst = TO_NODE;
 			ucmp.user_routine(&msg);
 		}
 
-	} else 
-	if(!ucmp.ack_waiting) { 
+	} else {
 		/* No hay notificacion de FRAME recibido, solo chequeo de integridad */
 		if(check_integrity(frm) == OK) {
 			GET_SADDR(&msg.src, frm);
 			msg.size = NNNNN(frm);
-			msg.dst = 0;
+			msg.dst = TO_BROADCAST;
 			ucmp.user_routine(&msg);
 		}
 	}
@@ -442,9 +410,32 @@ void ucmp_buffer_digest_data(union ucmp_buffer *buf, uint8_t *data, uint8_t size
  */
 TASK(ucmp_task0)
 {
+	uint8_t aa, acknak = 0;
+
 	if(ucmp.frame_in_queue) {
-		got_a_frame();
+
+		if(ucmp.ack_waiting) {
+			aa = AA(&storage.input.as_frame);
+			if(aa > 1 && CMP_SADDR(&storage.ack_from, &storage.input.as_frame))
+				acknak = 3 - aa;
+
+			if(acknak == 0) {
+				if( (hal_timer_ticks - tx_time) >= ACK_TIMEOUT ) {
+					if(tx_retry) {
+						hal_serial_write(storage.output.as_bytes, FRM_SIZE(&storage.output.as_frame));
+						tx_retry--;
+						tx_time = hal_timer_ticks;
+					} else
+						goto ready;
+				}
+			} else {
+				ready:
+				ucmp.ack_waiting = 0;
+				ucmp.status = READY;
+			}
+		} else
+			frame_to_user();
+
 		ucmp.frame_in_queue = 0;
 	}
 }
-
