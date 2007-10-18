@@ -32,9 +32,9 @@
  */
 
 static uint32_t rx_start, rx_timeout, tx_time;
-static uint8_t 	cur_stage = 0, discard = 0, received = 0, needed, rx_retry;
+static uint8_t 	cur_stage = 0, discard = 0, received = 0, needed, tx_retry;
 static uint8_t 	cmp_addr(struct private_address *, struct frame *, uint8_t);
-static void got_a_frame();
+static void frame_to_user();
 
 /* Reglas:
  * 1: Cuando se comparan 2 direcciones (big-endian) siempre se debe comenzar por el byte menos
@@ -47,7 +47,7 @@ static struct {
 	/* Nuestra direccion */
 	struct private_address local_addr;
 
-	uint8_t ack_waiting:1
+	uint8_t ack_waiting:1;
 	/* status 0: Esta en pleno envio de una trama (con RACK), status 1: Listo para enviar una trama */
 	uint8_t status:1;
 	volatile uint8_t frame_in_queue:1;
@@ -246,18 +246,19 @@ void ucmp_init(uint8_t *addr, func_t user_callback)
  */
 uint8_t ucmp_send() 
 {
-	hal_serial_write(storage.output.as_bytes, FRM_SIZE(&storage.output.as_frame));
+	struct frame *frm = &storage.output.as_frame;
+
+	hal_serial_write(storage.output.as_bytes, FRM_SIZE(frm));
 
 	if(AA(frm) == RACK) {
 		GET_DADDR(&storage.ack_from, frm);
-		/* Limpia ACKNAK */
-		ucmp.acknak = 0;
+
 		/* Activa la espera de agradecimiento desde storage.ack_from */
 		ucmp.ack_waiting = 1;
 
 		/* Bloqueamos el uso de uCmp hasta que este proceso se complete */
 		ucmp.status = IN_PROGRES;
-		rx_retry = RETRY_MAX;
+		tx_retry = RETRY_MAX;
 		tx_time = hal_timer_ticks; /* Captura de hal_timer_ticks al momento del envio */
 	} else
 		ucmp.status = READY;
