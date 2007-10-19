@@ -31,7 +31,7 @@
  *  >>> Proximo ciclo de desarrollo cambiamos eso (felipe)
  */
 
-static uint32_t rx_start, rx_timeout, tx_time;
+static uint32_t rx_start, rx_timeout, tx_start;
 static uint8_t 	cur_stage = 0, discard = 0, received = 0, needed, tx_retry;
 static uint8_t 	cmp_addr(struct private_address *, struct frame *, uint8_t);
 static void frame_to_user();
@@ -259,7 +259,7 @@ uint8_t ucmp_send()
 		/* Bloqueamos el uso de uCmp hasta que este proceso se complete */
 		ucmp.status = IN_PROGRES;
 		tx_retry = RETRY_MAX;
-		tx_time = hal_timer_ticks; /* Captura de hal_timer_ticks al momento del envio */
+		tx_start = hal_timer_ticks; /* Captura de hal_timer_ticks al momento del envio */
 	} else
 		ucmp.status = READY;
 
@@ -313,6 +313,7 @@ static void send_acknak(uint8_t w)
 	/* Copio las direcciones de la frame de entrada a "frm", pero intercambiadas */
 	inverse_addresses(frm, &storage.input.as_frame);
 
+	frm->ahead[DADDR_SIZE(frm) + SADDR_SIZE(frm)] = EOT;
 	hal_serial_write(storage.output.as_bytes, FRM_SIZE(frm));
 }
 
@@ -420,11 +421,11 @@ TASK(ucmp_task0)
 				acknak = 3 - aa;
 
 			if(acknak == 0) {
-				if( (hal_timer_ticks - tx_time) >= ACK_TIMEOUT ) {
+				if( (hal_timer_ticks - tx_start) >= ACK_TIMEOUT ) {
 					if(tx_retry) {
 						hal_serial_write(storage.output.as_bytes, FRM_SIZE(&storage.output.as_frame));
 						tx_retry--;
-						tx_time = hal_timer_ticks;
+						tx_start = hal_timer_ticks;
 					} else
 						goto ready;
 				}
