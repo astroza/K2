@@ -14,7 +14,7 @@
 #define ERROR		0x1
 
 #define READY		0x1
-#define IN_PROGRES	0x0
+#define IN_PROGRESS	0x0
 
 /* Constants */
 #define STX 		0x02 	/* Start of text */

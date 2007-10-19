@@ -48,10 +48,8 @@ static struct {
 	struct private_address local_addr;
 
 	uint8_t ack_waiting:1;
-	/* status 0: Esta en pleno envio de una trama (con RACK), status 1: Listo para enviar una trama */
-	uint8_t status:1;
 	volatile uint8_t frame_in_queue:1;
-	uint8_t reserved:5;
+	uint8_t reserved:6;
 
 	/* Funcion llamada luego de recibir un frame valido */
 	func_t user_routine;
@@ -237,6 +235,9 @@ void ucmp_init(uint8_t *addr, func_t user_callback)
 	hal_serial_rx_cb(ucmp_rx_callback);
 	hal_timer_init();
 
+	ucmp.frame_in_queue = 0;
+	ucmp.ack_waiting = 0;
+
 	/* Funcion llamada luego de recibir un frame */
 	ucmp.user_routine = user_callback;
 }
@@ -247,6 +248,7 @@ void ucmp_init(uint8_t *addr, func_t user_callback)
 uint8_t ucmp_send() 
 {
 	struct frame *frm = &storage.output.as_frame;
+	uint8_t status;
 
 	hal_serial_write(storage.output.as_bytes, FRM_SIZE(frm));
 
@@ -255,22 +257,21 @@ uint8_t ucmp_send()
 
 		/* Activa la espera de agradecimiento desde storage.ack_from */
 		ucmp.ack_waiting = 1;
-
-		/* Bloqueamos el uso de uCmp hasta que este proceso se complete */
-		ucmp.status = IN_PROGRES;
 		tx_retry = RETRY_MAX;
+
+		status = IN_PROGRESS;
 		tx_start = hal_timer_ticks; /* Captura de hal_timer_ticks al momento del envio */
 	} else
-		ucmp.status = READY;
+		status = READY;
 
-	return ucmp.status;
+	return status;
 }
 
 /* ucmp_get_buffer(): Si uCmp esta listo para enviar una trama, retorna la direccion del buffer para salida
  */
 struct frame *ucmp_buffer_get()
 {
-	if(ucmp.status == IN_PROGRES)
+	if(ucmp.ack_waiting)
 		return NULL;
 
 	return &storage.output.as_frame;
@@ -427,13 +428,10 @@ TASK(ucmp_task0)
 						tx_retry--;
 						tx_start = hal_timer_ticks;
 					} else
-						goto ready;
+						ucmp.ack_waiting = 0;
 				}
-			} else {
-				ready:
+			} else
 				ucmp.ack_waiting = 0;
-				ucmp.status = READY;
-			}
 		} else
 			frame_to_user();
 
