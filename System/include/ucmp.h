@@ -90,7 +90,7 @@ struct private_address {
 	uint8_t pa_addr[ADDR_SIZE];
 	uint8_t pa_size;
 };
- 
+
 /* La rutina de usuario accede al contenido y parametros de un mensaje mediante
  * esta estructura
  */
