@@ -1,0 +1,6 @@
+ARCH=avr8
+MCU=atmega168
+CPU_FREQUENCY=16000000
+SERIAL_SPEED=9600
+
+include $(BASE)/Arch/common.mak

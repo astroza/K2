@@ -1,15 +1,17 @@
-include avr8.mak
+include defs.mak
 
 CFLAGS=-mmcu=$(MCU) -DF_CPU=$(F_CPU) -O3
-INCLUDE=-I./include
+INCLUDE=-Iinclude
 
-all: hal_serial.o hal_timer.o
+SERIAL_OBJ=$(BD)/hal_serial.o
+TIMER_OBJ=$(BD)/hal_timer.o
 
-hal_serial.o: hal_serial.c
-	$(CC) -DF_CPU=$(F_CPU) $(CFLAGS) $(INCLUDE) -c $? -o $(BD)/$@
+all: $(SERIAL_OBJ) $(TIMER_OBJ)
 
-hal_timer.o: hal_timer.c
-	$(CC) $(CFLAGS) $(INCLUDE) -c $? -o $(BD)/$@
+$(SERIAL_OBJ): hal_serial.c
+	@echo "CC $@"
+	$(CC) -DF_CPU=$(F_CPU) $(CFLAGS) $(INCLUDE) -c $? -o $@
 
-clean:
-	rm -f *.o
+$(TIMER_OBJ): hal_timer.c
+	@echo "CC $@"
+	$(CC) $(CFLAGS) $(INCLUDE) -c $? -o $@

@@ -1,0 +1,59 @@
+#!/bin/bash
+# Felipe Astroza - COSWrapper
+# Construye un Executable and Linkable Format object del sistema COS
+
+function die() {
+	echo $1
+	exit $2
+}
+
+BASE=/home/felipe/cos/System
+
+OPTS=`getopt c:o: $*`
+if [ $? != 0 ]; then
+	die "$0: Saliendo.." 2
+fi
+
+set -- $OPTS		# Fijo argumentos
+OUTPUT=system.elf
+while [ $1 != -- ]; do
+	case $1 in
+	-c)
+		MCU=$2
+		shift;; # Salta al otro parametro
+	-o)
+		OUTPUT=$2
+		shift;;
+	esac
+	shift
+done
+
+if [ $MCU"x" == "x" ]; then
+	die "MCU no especificado" 1
+fi
+
+make --quiet -f $BASE/Makefile.$MCU cos BASE=$BASE
+if [ $? != 0 ]; then
+	die "No se puede compilar COS" 1
+fi
+
+shift
+# Objetos a compilar
+while [ $1"x" != "x" ]; do
+	f="yes"
+	make --quiet -f $BASE/Makefile.$MCU compile BASE=$BASE FILE=$1
+	if [ $? != 0 ]; then
+		die "Error compilando $1" 1
+	fi
+	shift
+done
+if [ $f"x" == "x" ]; then
+	echo "Sistema incompleto"
+	exit 1
+fi
+
+# Construccion de la imagen
+make --quiet -f $BASE/Makefile.$MCU build_image BASE=$BASE IMAGE=$OUTPUT
+if [ $? != 0 ]; then
+	die "Un error ocurrio en creacion de la imagen" 1
+fi
