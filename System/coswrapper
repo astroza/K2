@@ -41,7 +41,7 @@ shift
 # Objetos a compilar
 while [ $1"x" != "x" ]; do
 	f="yes"
-	make --quiet -f $BASE/Makefile.$MCU compile BASE=$BASE FILE=$1
+	make -f $BASE/Makefile.$MCU compile BASE=$BASE FILE=$1
 	if [ $? != 0 ]; then
 		die "Error compilando $1" 1
 	fi

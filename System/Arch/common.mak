@@ -1,6 +1,7 @@
 include $(BASE)/Arch/$(ARCH)/defs.mak
 
 BUILD_DIR=$(PWD)/build_$(ARCH)
+OBJ=$(patsubst %.c,%.o,$(notdir $(FILE)))
 
 tree:
 	mkdir -p $(BUILD_DIR)
@@ -11,12 +12,9 @@ cos: tree
 	make --quiet -C $(BASE)/Network CC=$(CC) ARCH=$(ARCH) SP=$(SERIAL_SPEED) BD=$(BUILD_DIR)
 
 compile:
-	@echo "CC $(FILE)"
-	$(CC) -mmcu=$(MCU) -O3 -Wall -I$(BASE)/include/ -I$(BASE)/Arch/$(ARCH)/include/ -c $(FILE) -o $(BUILD_DIR)/$(FILE).o
+	@echo "CC $(OBJ)"
+	$(CC) -mmcu=$(MCU) -O3 -Wall -I$(BASE)/include/ -I$(BASE)/Arch/$(ARCH)/include/ -c $(FILE) -o $(BUILD_DIR)/$(OBJ)
 
 build_image:
 	@echo "LD $(IMAGE)"
 	$(CC) -mmcu=$(MCU) -Wl,-T,$(BASE)/Arch/$(ARCH)/cos.lds $(BUILD_DIR)/*.o -o $(IMAGE)
-
-clean:
-	cd $(BUILD_DIR); rm -f *.o
