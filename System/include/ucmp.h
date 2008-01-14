@@ -13,6 +13,7 @@
 #define OK 		0x0
 #define ERROR		0x1
 
+#define BUSY		0x2
 #define READY		0x1
 #define IN_PROGRESS	0x0
 
@@ -122,9 +123,8 @@ typedef void (*func_t)(struct ucmp_message *);
 #define RACK 		0x1 	/* Requiere ACK */
 #define ACK 		0x2 	/* Acknowledged */
 #define NAK 		0x3 	/* Not Acknowledged */
-#define NOMETHOD	0x0
-#define CRC8		0x1
-#define CHECK_INTEGRITY	0x1
+
+#define CHKINT		0x1	/* Check integrity */
 
 /* Numero de veces que reintenta enviar un frame */
 #define RETRY_MAX	3
@@ -143,10 +143,10 @@ typedef void (*func_t)(struct ucmp_message *);
 void ucmp_init(uint8_t *, func_t);
 void SET_ADDR(struct frame *, struct private_address *, struct private_address *);
 struct private_address *GET_LOCAL_ADDRESS();
-uint8_t ucmp_send();
-struct frame *ucmp_buffer_get();
+uint8_t ucmp_send(uint8_t);
+uint8_t *ucmp_get_buffer(struct private_address *, struct private_address *, uint8_t);
 void inverse_addresses(struct frame *, struct frame *);
-void ucmp_buffer_digest_data(uint8_t *, uint8_t, uint8_t);
+uint8_t crc8(struct frame *frm);
 
 void __GET_ADDR(struct private_address *, struct frame *, uint8_t);
 

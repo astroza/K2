@@ -48,8 +48,7 @@ while [ $1"x" != "x" ]; do
 	shift
 done
 if [ $f"x" == "x" ]; then
-	echo "Sistema incompleto"
-	exit 1
+	die "Sistema incompleto" 1
 fi
 
 # Construccion de la imagen

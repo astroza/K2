@@ -8,25 +8,22 @@
 
 void ucmp_user_function(struct ucmp_message *msg)
 {
-	struct frame *frm;
-	uint32_t fp;
+	uint8_t *buf;
 
-	frm = ucmp_buffer_get();
-
-	frm->stx = STX;
-	CLR_HEADER(frm);
-	SET_ADDR(frm, &msg->src, GET_LOCAL_ADDRESS());
+	buf = ucmp_get_buffer(&msg->src, GET_LOCAL_ADDRESS(), 4);
 
 	if(msg->size) {
 		switch(msg->content[0]) {
 			case FINGERPRINT:
-				fp = 0xbeef;
-				ucmp_buffer_digest_data((uint8_t *)&fp, 4, 0);
-				ucmp_send();
+				buf[0] = 0xff;
+				buf[1] = 0xff;
+				buf[2] = 0xff;
+				buf[3] = 0xff;
+				ucmp_send(0);
 				break;
 			case TICKS:
-				ucmp_buffer_digest_data((uint8_t *)&hal_timer_ticks, 4, 0);
-				ucmp_send();
+				memcpy((void *)buf, (void *)&hal_timer_ticks, 4);
+				ucmp_send(0);
 				break;
 		}
 	}
