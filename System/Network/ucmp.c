@@ -14,7 +14,7 @@
 /* Tiempo estimado para la transferencia de un octeto a SERIAL_SPEED baudios
  * Observacion: La cantidad de bits por byte transferido son 10. START BIT + 8 bits + STOP BIT 
  */
-#define TIMER_TICKS_PER_BYTE ((10*100000)/SERIAL_SPEED)
+#define TIMER_TICKS_PER_BYTE ((10*100000)/SERIAL_SPEED + 1)
 
 /* TIMER_TICKS_PER_BYTE: La frecuencia en este caso es SERIAL_SPEED,
  * SERIAL_SPEED expresa la cantidad de bits por segundo, nosotros necesitamos bytes,
@@ -403,29 +403,32 @@ uint8_t *ucmp_get_buffer(struct private_address *dst, struct private_address *sr
  */
 TASK(ucmp_task0)
 {
-	uint8_t aa, acknak = 0;
+	uint8_t aa, acknak = NAK;
 
-	if(ucmp.frame_in_queue) {
-
-		if(ucmp.ack_waiting) {
+	if(ucmp.ack_waiting) {
+		if(ucmp.frame_in_queue) {
 			aa = AA(&input.as_frame);
 			if(aa > 1 && CMP_SADDR(&ack_from, &input.as_frame))
-				acknak = 3 - aa;
+				acknak = aa;
 
-			if(acknak == 0) {
-				if( (hal_timer_ticks - tx_start) >= ACK_TIMEOUT ) {
-					if(tx_retry) {
-						hal_serial_write(output.as_bytes, 3 + output_offset);
-						tx_retry--;
-						tx_start = hal_timer_ticks;
-					} else
-						ucmp.ack_waiting = 0;
-				}
-			} else
-				ucmp.ack_waiting = 0;
+			ucmp.frame_in_queue = 0;
+		}
+
+		if(acknak != ACK) {
+			if( (hal_timer_ticks - tx_start) >= ACK_TIMEOUT ) {
+				if(tx_retry) {
+					hal_serial_write(output.as_bytes, 3 + output_offset);
+					tx_retry--;
+					tx_start = hal_timer_ticks;
+				} else
+					ucmp.ack_waiting = 0;
+			}
 		} else
-			frame_to_user();
-
+			ucmp.ack_waiting = 0;
+	} else
+	if(ucmp.frame_in_queue) {
+		frame_to_user();
 		ucmp.frame_in_queue = 0;
 	}
 }
+

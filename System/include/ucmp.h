@@ -74,7 +74,7 @@ struct __frame {
 #define CLR_HEADER(a) ((struct __frame *)(a))->hd = 0
 
 #ifndef SUPPORTED_NNNNN
-#define SUPPORTED_NNNNN 31
+#define SUPPORTED_NNNNN ((1 << 5) - 1)
 #endif
 
 /* Un buffer para una trama uCmp */
@@ -124,7 +124,7 @@ typedef void (*func_t)(struct ucmp_message *);
 #define ACK 		0x2 	/* Acknowledged */
 #define NAK 		0x3 	/* Not Acknowledged */
 
-#define CHKINT		0x1	/* Check integrity */
+#define CHKINT		0x2	/* Check integrity */
 
 /* Numero de veces que reintenta enviar un frame */
 #define RETRY_MAX	3
