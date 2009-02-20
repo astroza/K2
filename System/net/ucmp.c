@@ -14,7 +14,7 @@
 /* Tiempo estimado para la transferencia de un octeto a SERIAL_SPEED baudios
  * Observacion: La cantidad de bits por byte transferido son 10. START BIT + 8 bits + STOP BIT 
  */
-#define TIMER_TICKS_PER_BYTE ((10*100000)/SERIAL_SPEED + 1)
+#define TIMER_TICKS_PER_BYTE ((10*100000)/SERIAL_SPEED)
 
 /* TIMER_TICKS_PER_BYTE: La frecuencia en este caso es SERIAL_SPEED,
  * SERIAL_SPEED expresa la cantidad de bits por segundo, nosotros necesitamos bytes,
@@ -24,11 +24,6 @@
  * 1/(SERIAL_SPEED/10) = 10/SERIAL_SPEED, HAL genera un tick cada 0.00001 segundos
  * osea que 100000 ticks es un segundo, de esta manera 10/SERIAL_SPEED*100000 es la
  * cantidad de ticks por byte transferido.
- *
- *      Recuerden, por cada segundo, 100000 ticks :-) 
- *  >>> Creo que esto es demaciado.... tal vez llegar a 1mS seria mas sensato, tal vez
- *      fui exagerado cuando hablamos la otra vez.(rab)
- *  >>> Proximo ciclo de desarrollo cambiamos eso (felipe)
  */
 
 static uint32_t rx_start, rx_timeout, tx_start;
@@ -49,19 +44,18 @@ static struct {
 
 	uint8_t ack_waiting:1;
 	volatile uint8_t frame_in_queue:1;
-	uint8_t reserved:6;
 
 	/* Funcion llamada luego de recibir un frame valido */
 	func_t user_routine;
+
+	/* ¿Quien me envia un agradecimiento? ack_from */
+	struct private_address ack_from;
 } ucmp;
 
 static union ucmp_buffer input;
 
 static union ucmp_buffer output;
 static uint8_t output_offset;
-
-/* ¿Quien me envia un agradecimiento? ack_from */
-static struct private_address ack_from;
 
 /* GET_LOCAL_ADDRESS(): Retorna nuestra direccion.
  */
@@ -254,9 +248,9 @@ uint8_t ucmp_send(uint8_t flags)
 	hal_serial_write(output.as_bytes, 3 + output_offset);
 
 	if(AA(frm) == RACK) {
-		GET_DADDR(&ack_from, frm);
+		GET_DADDR(&ucmp.ack_from, frm);
 
-		/* Activa la espera de agradecimiento desde ack_from */
+		/* Activa la espera de agradecimiento desde ucmp.ack_from */
 		ucmp.ack_waiting = 1;
 		tx_retry = RETRY_MAX;
 
@@ -399,7 +393,7 @@ uint8_t *ucmp_get_buffer(struct private_address *dst, struct private_address *sr
 	return buf;
 }
 
-/* Tarea para Kepler
+/* Tarea de UCMP
  */
 TASK(ucmp_task0)
 {
@@ -408,7 +402,7 @@ TASK(ucmp_task0)
 	if(ucmp.ack_waiting) {
 		if(ucmp.frame_in_queue) {
 			aa = AA(&input.as_frame);
-			if(aa > 1 && CMP_SADDR(&ack_from, &input.as_frame))
+			if(aa > 1 && CMP_SADDR(&ucmp.ack_from, &input.as_frame))
 				acknak = aa;
 
 			ucmp.frame_in_queue = 0;
@@ -431,4 +425,3 @@ TASK(ucmp_task0)
 		ucmp.frame_in_queue = 0;
 	}
 }
-

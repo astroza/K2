@@ -28,7 +28,7 @@ void run_init()
 }
 	
 
-int main()
+int __attribute__((used)) main()
 {
 	uint16_t *current;
 	ktask next_task;
