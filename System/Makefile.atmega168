@@ -1,5 +1,9 @@
+# MCU
 ARCH=avr8
 CPU_FREQUENCY=16000000
+# Peripherals
 SERIAL_SPEED=9600
+# UCMP
+ADDR_SIZE=3
 
-include $(BASE)/Arch/common.mak
+include $(BASE)/arch/common.mak

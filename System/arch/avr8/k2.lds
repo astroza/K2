@@ -1,5 +1,5 @@
 /* Generado por avr-ld.
- * Modificado para nanokernel Kepler
+ * Modificado Kepler2
  */
 
 OUTPUT_FORMAT("elf32-avr","elf32-avr","elf32-avr")
@@ -114,16 +114,15 @@ SECTIONS
   {
      PROVIDE (__data_start = .) ;
     *(.data)
- /* Creamos simbolos con las direcciones de inicio y final de nuestras subsecciones en .data 
-  * En esta seccion almacenaremos punteros
+ /* Simbolos con las direcciones de inicio y final de nuestras subsecciones en .data 
   */
-    PROVIDE (init_array_start = .);
-    *(.init_array)
-    PROVIDE (init_array_stop = .);
+    PROVIDE (kinit_arr_start = .);
+    *(.kinit_arr)
+    PROVIDE (kinit_arr_stop = .);
 
-    PROVIDE (task_array_start = .);
-    *(.task_array)
-    PROVIDE (task_array_stop = .);
+    PROVIDE (ktask_arr_start = .);
+    *(.ktask_arr)
+    PROVIDE (ktask_arr_stop = .);
 
     *(.gnu.linkonce.d*)
     . = ALIGN(2);

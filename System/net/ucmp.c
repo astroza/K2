@@ -263,7 +263,6 @@ uint8_t ucmp_send(uint8_t flags)
 }
 
 /* inverse_addresses(): Copia direcciones entre 2 frames pero de forma inversa.
- * Esta rutina es una optimizacion para peticion/respuesta.
  * inversa:
  * frm0 -> destination = frm1 -> source
  * frm0 -> source = frm1 -> destination

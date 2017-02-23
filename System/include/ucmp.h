@@ -84,7 +84,9 @@ union ucmp_buffer {
 	uint8_t as_bytes[3 + 9 + SUPPORTED_NNNNN + 2];
 };
 
+#ifndef ADDR_SIZE
 #define ADDR_SIZE 	3
+#endif
 
 /* struct private_address: Descriptora de una direccion uCmp */
 struct private_address {

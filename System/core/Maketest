@@ -1,0 +1,2 @@
+all:
+	gcc test.c task.c msg.c --save-temps -g -I../include -o test
