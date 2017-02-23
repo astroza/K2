@@ -7,7 +7,7 @@ function die() {
 	exit $2
 }
 
-BASE=/home/felipe/ElectroLinux/k2/System
+BASE=/home/felipe/devel/k2/System
 
 OPTS=`getopt c:o: $*`
 if [ $? != 0 ]; then
